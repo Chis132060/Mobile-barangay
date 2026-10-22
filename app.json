@@ -40,7 +40,13 @@
                                          "cameraPermission":  "Allow BarangayAI to use your camera for QR scanning and resident ID capture."
                                      }
                                  ],
-                                 "expo-image-picker"
+                                 "expo-image-picker",
+                                 [
+                                     "expo-audio",
+                                     {
+                                         "microphonePermission":  "Allow BarangayAI to record voice questions for Ate Sora."
+                                     }
+                                 ]
                              ],
                  "experiments":  {
                                      "typedRoutes":  true,

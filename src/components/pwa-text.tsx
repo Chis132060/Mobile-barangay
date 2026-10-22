@@ -15,4 +15,4 @@ export function PwaText({ style, ...props }: TextProps) {
       : weight === '600' ? 'Inter_600SemiBold'
         : weight === '500' ? 'Inter_500Medium' : 'Inter_400Regular';
   return <Text {...props} style={[{ fontFamily: family }, style]} />;
-}\n
+}

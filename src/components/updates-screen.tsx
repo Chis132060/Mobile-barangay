@@ -1,187 +1,115 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { PwaText } from '@/components/pwa-text';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Image, Pressable, ScrollView, View } from 'react-native';
+import { Button, C, Card, Chip, ErrorBox, Icon, Page, Title } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
-import { Button, C, Card, Chip, ErrorBox, Icon, Label, Row, Title } from '@/components/ui';
 
-type Announcement = {
-  id: string; title: string; description: string; category: string;
-  created_at: string; event_start_at: string | null; event_end_at: string | null; venue: string | null;
-};
-type Program = {
-  id: string; name: string; description: string | null; category: string; status: string;
-  image_url: string | null; purok: string | null; venue: string | null; schedule_details: string | null;
-  requirements: string | null; registration_open: boolean; registration_deadline: string | null;
-  registration_opens_at: string | null; event_start_at: string | null; event_end_at: string | null;
-  max_participants: number | null; min_age: number | null; max_age: number | null;
-};
+type Program = { id: string; name: string; description: string | null; category: string; status: string; image_url: string | null; purok: string | null; venue: string | null; schedule_details: string | null; requirements: string | null; registration_open: boolean; registration_deadline: string | null; registration_opens_at: string | null; event_start_at: string | null; event_end_at: string | null; max_participants: number | null; min_age: number | null; max_age: number | null };
+type Announcement = { id: string; title: string; description: string; category: string; created_at: string; event_start_at: string | null; event_end_at: string | null; venue: string | null };
+type Organization = { id: string; name: string; description: string | null; org_type: string; president: string | null; contact: string | null };
 type Application = { program_id: string; status: string; rejection_reason: string | null; created_at: string };
+type Tab = 'programs' | 'organizations' | 'announcements';
+const TABS: { id: Tab; title: string }[] = [{ id: 'programs', title: 'Programs' }, { id: 'organizations', title: 'Organizations' }, { id: 'announcements', title: 'Announcements' }];
 
-const phDate = (date: string) => new Date(date).toLocaleString('en-PH', {
-  timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short',
-});
-
-export function UpdatesScreen() {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+export function UpdatesScreen({ user }: { user: { id: string } | null }) {
   const [programs, setPrograms] = useState<Program[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [tab, setTab] = useState<'programs' | 'announcements'>('programs');
+  const [activeTab, setActiveTab] = useState<Tab>('programs');
   const [category, setCategory] = useState('All');
   const [showApplications, setShowApplications] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshCounter, setRefreshCounter] = useState(0);
+  const [error, setError] = useState('');
+  const [applyMessage, setApplyMessage] = useState('');
   const [applying, setApplying] = useState<string | null>(null);
-  const [now, setNow] = useState(0);
+  const [now] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     if (!supabase) { setError('Supabase is not configured.'); setLoading(false); return; }
-    setLoading(true); setError('');
-    try {
-      const [annResult, programResult] = await Promise.all([
-        supabase.from('announcements')
-          .select('id,title,description,category,created_at,event_start_at,event_end_at,venue')
-          .eq('status', 'Published').order('created_at', { ascending: false }),
-        supabase.from('barangay_programs')
-          .select('id,name,description,category,status,image_url,purok,venue,schedule_details,requirements,registration_open,registration_deadline,registration_opens_at,event_start_at,event_end_at,max_participants,min_age,max_age')
-          .eq('is_public', true).in('status', ['Active', 'On Hold'])
-          .order('created_at', { ascending: false }),
-      ]);
-      if (!annResult.error) setAnnouncements((annResult.data || []) as Announcement[]);
-      if (!programResult.error) setPrograms((programResult.data || []) as Program[]);
-      const queryErrors = [annResult.error?.message, programResult.error?.message].filter(Boolean);
-      if (queryErrors.length) setError(`Unable to load some updates: ${queryErrors.join('; ')}`);
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: resident, error: residentError } = await supabase
-          .from('residents').select('id').eq('user_id', user.id).maybeSingle();
-        if (residentError) throw residentError;
-        if (resident) {
-          const { data, error: applicationError } = await supabase
-            .from('program_enrollees')
-            .select('program_id,status,rejection_reason,created_at')
-            .eq('resident_id', resident.id);
-          if (applicationError) throw applicationError;
-          setApplications((data || []) as Application[]);
-        }
-      } else setApplications([]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to load updates.');
-    } finally { setLoading(false); }
-  }, []);
+    setError('');
+    const [ann, pro, org] = await Promise.all([
+      supabase.from('announcements').select('id,title,description,category,created_at,event_start_at,event_end_at,venue').eq('status', 'Published').order('created_at', { ascending: false }),
+      supabase.from('barangay_programs').select('id,name,description,category,status,image_url,purok,venue,schedule_details,requirements,registration_open,registration_deadline,registration_opens_at,event_start_at,event_end_at,max_participants,min_age,max_age').eq('is_public', true).in('status', ['Active', 'On Hold']).order('created_at', { ascending: false }),
+      supabase.from('barangay_organizations').select('id,name,description,org_type,president,contact').eq('status', 'Active').order('name'),
+    ]);
+    if (!ann.error) setAnnouncements((ann.data || []) as Announcement[]);
+    if (!pro.error) setPrograms((pro.data || []) as Program[]);
+    if (!org.error) setOrganizations((org.data || []) as Organization[]);
+    const errors = [ann.error?.message, pro.error?.message, org.error?.message].filter(Boolean);
+    if (errors.length) setError(errors.join('; '));
+    if (user) {
+      const { data: resident } = await supabase.from('residents').select('id').eq('user_id', user.id).maybeSingle();
+      if (resident) {
+        const { data, error: appError } = await supabase.from('program_enrollees').select('program_id,status,rejection_reason,created_at').eq('resident_id', resident.id).order('created_at', { ascending: false });
+        if (!appError) setApplications((data || []) as Application[]);
+      }
+    } else setApplications([]);
+    setLoading(false);
+  }, [user]);
 
   useEffect(() => {
-    const loadTimer = setTimeout(() => void load(), 0);
-    const clockTimer = setTimeout(() => setNow(Date.now()), 0);
-    const clockInterval = setInterval(() => setNow(Date.now()), 60_000);
-    if (!supabase) return () => { clearTimeout(loadTimer); clearTimeout(clockTimer); clearInterval(clockInterval); };
+    let active = true;
+    queueMicrotask(() => { void load().finally(() => { if (active) setLoading(false); }); });
     const client = supabase;
-    const channel = client.channel('resident-mobile-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => void load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'barangay_programs' }, () => void load())
+    if (!client) return () => { active = false; };
+    const channel = client.channel('resident-updates-live-mobile')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barangay_programs' }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barangay_organizations' }, () => { void load(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'program_enrollees' }, () => { void load(); })
       .subscribe();
-    return () => { clearTimeout(loadTimer); clearTimeout(clockTimer); clearInterval(clockInterval); void client.removeChannel(channel); };
-  }, [load]);
+    return () => { active = false; void client.removeChannel(channel); };
+  }, [load, refreshCounter]);
 
-  async function joinProgram(programId: string) {
-    if (!supabase || applying) return;
-    setApplying(programId); setMessage('');
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) throw new Error('Please sign in before applying.');
-      const { error: applyError } = await supabase.rpc('apply_to_barangay_program', { p_program_id: programId });
-      if (applyError) throw applyError;
-      setMessage('Application submitted. Await barangay review.');
-      await load();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Unable to submit application.');
-    } finally { setApplying(null); }
+  const applicationByProgram = useMemo(() => Object.fromEntries(applications.map((app) => [app.program_id, app])), [applications]);
+  const visiblePrograms = programs.filter((program) => category === 'All' || program.category === category);
+  async function joinProgram(id: string) {
+    if (!supabase) return;
+    if (!user) { setApplyMessage('Please sign in before applying.'); return; }
+    if (applying) return;
+    setApplying(id); setApplyMessage('');
+    const { error: applyError } = await supabase.rpc('apply_to_barangay_program', { p_program_id: id });
+    if (applyError) setApplyMessage(applyError.message);
+    else { setApplyMessage('Application submitted. Await barangay review.'); await load(); }
+    setApplying(null);
   }
 
-  const categories = ['All', ...new Set(programs.map((p) => p.category))];
-  const canApply = (p: Program) => p.status === 'Active' && p.registration_open
-    && now > 0
-    && (!p.registration_opens_at || new Date(p.registration_opens_at).getTime() <= now)
-    && (!p.registration_deadline || new Date(p.registration_deadline).getTime() >= now)
-    && (!p.event_start_at || new Date(p.event_start_at).getTime() > now)
-    && !applications.some((a) => a.program_id === p.id);
+  return <Page>
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><View style={{ flex: 1 }}><Title sub="Programs, organizations, and official announcements from Barangay Hall">Barangay Updates</Title></View><Pressable accessibilityRole="button" accessibilityLabel="Refresh updates" onPress={() => { setLoading(true); setRefreshCounter((n) => n + 1); }} style={{ padding: 9, marginBottom: 14 }}><Icon name="refresh" size={19} color={loading ? C.blue : C.muted} /></Pressable></View>
+    {!!error && <ErrorBox>Unable to load some updates: {error}</ErrorBox>}
+    {!!applyMessage && <PwaText accessibilityRole="alert" style={{ color: '#1e40af', backgroundColor: '#eff6ff', borderRadius: 12, padding: 12, fontSize: 12 }}>{applyMessage}</PwaText>}
+    <View style={tabBar}>{TABS.map((tab) => <Pressable key={tab.id} accessibilityRole="tab" accessibilityState={{ selected: activeTab === tab.id }} onPress={() => setActiveTab(tab.id)} style={[tabButton, activeTab === tab.id && activeTabStyle]}><PwaText numberOfLines={1} style={{ color: activeTab === tab.id ? '#1d4ed8' : '#4b5563', fontSize: tab.id === 'organizations' ? 11 : 12, fontWeight: '600', textAlign: 'center' }}>{tab.title}</PwaText></Pressable>)}</View>
 
-  return <View style={{ flex: 1, backgroundColor: C.bg }}>
-    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24, gap: 14 }}>
-      <Row><Title sub="Programs and official announcements from Barangay Hall">Barangay Updates</Title>
-        <Pressable accessibilityRole="button" accessibilityLabel="Refresh updates" onPress={() => void load()} style={{ padding: 8 }}>
-          <Icon name="refresh" color={loading ? C.blue : C.muted} />
-        </Pressable>
-      </Row>
-      {!!error && <ErrorBox>{error}</ErrorBox>}
-      {!!message && <View accessibilityRole="alert" style={{ padding: 12, borderRadius: 12, backgroundColor: '#eff6ff' }}>
-        <Text style={{ color: '#1e40af', fontSize: 12 }}>{message}</Text>
-      </View>}
-      <View style={{ flexDirection: 'row', padding: 4, gap: 5, borderRadius: 16, backgroundColor: '#f1f5f9' }}>
-        {(['programs', 'announcements'] as const).map((section) => <Pressable key={section} onPress={() => setTab(section)}
-          style={{ flex: 1, padding: 11, borderRadius: 12, alignItems: 'center', backgroundColor: tab === section ? C.white : 'transparent' }}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: tab === section ? '#1d4ed8' : C.muted }}>
-            {section === 'programs' ? 'Programs' : 'Announcements'}
-          </Text>
-        </Pressable>)}
-      </View>
+    {activeTab === 'programs' && <>
+      <Card style={{ padding: 13 }}><Pressable accessibilityRole="button" onPress={() => setShowApplications((v) => !v)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><PwaText style={{ fontSize: 13, color: '#111827', fontWeight: '700' }}>My Program Applications</PwaText><PwaText style={{ fontSize: 12, color: '#4b5563' }}>{applications.length} {showApplications ? '▲' : '▼'}</PwaText></Pressable>{showApplications && <View style={{ gap: 8, marginTop: 12 }}>{applications.length === 0 ? <PwaText style={{ fontSize: 12, color: C.muted }}>No applications yet.</PwaText> : applications.map((app) => <View key={`${app.program_id}-${app.created_at}`} style={applicationCard}><PwaText style={{ fontWeight: '700', fontSize: 12, color: '#111827' }}>{programs.find((p) => p.id === app.program_id)?.name || 'Program'}</PwaText><PwaText style={smallText}>Status: {app.status}</PwaText><PwaText style={smallText}>Applied: {new Date(app.created_at).toLocaleDateString()}</PwaText>{!!app.rejection_reason && <PwaText style={{ color: '#b91c1c', fontSize: 11 }}>Reason: {app.rejection_reason}</PwaText>}</View>)}</View>}</Card>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}><PwaText style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>Barangay Programs</PwaText><PwaText style={smallText}>{programs.length} available</PwaText></View>
+      {programs.length > 0 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>{['All', ...Array.from(new Set(programs.map((p) => p.category)))].map((item) => <Chip key={item} title={item} active={category === item} onPress={() => setCategory(item)} />)}</ScrollView>}
+      {loading ? <PwaText style={smallText}>Loading programs...</PwaText> : programs.length === 0 ? <View style={emptyCard}><PwaText style={smallText}>No active barangay programs have been published by the barangay yet. Please check back for official registration updates.</PwaText></View> : visiblePrograms.map((program) => <Card key={program.id} style={{ gap: 9 }}>
+        <PwaText style={categoryBadge}>{program.category}</PwaText>
+        <PwaText style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>{program.name}</PwaText>
+        {!!program.image_url && <Image source={{ uri: program.image_url }} resizeMode="cover" style={{ width: '100%', height: 180, borderRadius: 12, backgroundColor: '#f3f4f6' }} />}
+        {program.status === 'On Hold' && <PwaText style={holdNote}>Historical / citywide reference only. Not confirmed as a current barangay program. No registration available; please verify with the barangay office.</PwaText>}
+        {!!program.description && <PwaText style={bodyText}>{program.description}</PwaText>}
+        <View style={{ gap: 4 }}><PwaText style={smallText}>Area: {program.purok || 'All Puroks'}</PwaText>{!!program.venue && <PwaText style={smallText}>Venue: {program.venue}</PwaText>}{!!program.event_start_at && <PwaText style={eventText}>Event: {new Date(program.event_start_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })} (PH time)</PwaText>}{!!program.event_end_at && new Date(program.event_end_at).getTime() < now && <PwaText style={smallText}>Completed</PwaText>}{!!program.schedule_details && <PwaText style={smallText}>Schedule notes: {program.schedule_details}</PwaText>}{!!program.requirements && <PwaText style={smallText}>Requirements: {program.requirements}</PwaText>}{!!program.registration_opens_at && <PwaText style={smallText}>Applications open: {new Date(program.registration_opens_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}</PwaText>}{!!program.registration_deadline && <PwaText style={smallText}>Apply by: {new Date(program.registration_deadline).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}</PwaText>}{!!program.max_participants && <PwaText style={smallText}>Capacity: {program.max_participants} slots (subject to availability)</PwaText>}{(program.min_age || program.max_age) && <PwaText style={smallText}>Age: {program.min_age || 'Any'} - {program.max_age || 'Any'}</PwaText>}<PwaText style={{ color: program.registration_open ? '#047857' : '#b45309', fontSize: 12, fontWeight: '700' }}>{program.registration_open ? 'Registration Open' : 'Registration Closed'}</PwaText></View>
+        <Button title={applicationByProgram[program.id] ? `Application: ${applicationByProgram[program.id].status}` : program.status !== 'Active' || !program.registration_open || !!(program.registration_opens_at && new Date(program.registration_opens_at).getTime() > now) || !!(program.event_start_at && new Date(program.event_start_at).getTime() <= now) || !!(program.registration_deadline && new Date(program.registration_deadline).getTime() < now) ? 'Registration Closed' : applying === program.id ? 'Submitting...' : 'Join Program'} disabled={!!applicationByProgram[program.id] || applying !== null || program.status !== 'Active' || !program.registration_open || !!(program.registration_opens_at && new Date(program.registration_opens_at).getTime() > now) || !!(program.event_start_at && new Date(program.event_start_at).getTime() <= now) || !!(program.registration_deadline && new Date(program.registration_deadline).getTime() < now)} onPress={() => void joinProgram(program.id)} />
+      </Card>)}
+    </>}
 
-      {tab === 'programs' ? <>
-        <Card style={{ padding: 0, overflow: 'hidden', gap: 0 }}>
-          <Pressable onPress={() => setShowApplications((v) => !v)} style={{ padding: 15 }}>
-            <Row><Text style={{ fontSize: 13, fontWeight: '800', color: C.text }}>My Program Applications</Text>
-              <Text style={{ fontSize: 11, color: C.muted }}>{applications.length} {showApplications ? '▲' : '▼'}</Text></Row>
-          </Pressable>
-          {showApplications && <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 8 }}>
-            {applications.length === 0 ? <Text style={{ fontSize: 12, color: C.muted }}>No applications yet.</Text> : applications.map((a) => <View key={a.program_id} style={{ backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, gap: 4 }}>
-              <Text style={{ fontSize: 12, fontWeight: '700', color: C.text }}>{programs.find((p) => p.id === a.program_id)?.name || 'Program'}</Text>
-              <Text style={{ fontSize: 11, color: C.muted }}>Status: {a.status}</Text>
-              <Text style={{ fontSize: 11, color: C.muted }}>Applied: {new Date(a.created_at).toLocaleDateString()}</Text>
-              {!!a.rejection_reason && <Text style={{ fontSize: 11, color: C.red }}>Reason: {a.rejection_reason}</Text>}
-            </View>)}
-          </View>}
-        </Card>
-        <Row><Label>Barangay Programs</Label><Text style={{ fontSize: 11, color: C.muted }}>{programs.length} available</Text></Row>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
-          {categories.map((c) => <Chip key={c} title={c} active={category === c} onPress={() => setCategory(c)} />)}
-        </ScrollView>
-        {loading && programs.length === 0 ? <ActivityIndicator color={C.blue} /> : programs.length === 0
-          ? <Card><Text style={{ fontSize: 12, color: C.muted, textAlign: 'center' }}>No active barangay programs have been published by the barangay yet. Please check back for official registration updates.</Text></Card>
-          : programs.filter((p) => category === 'All' || p.category === category).map((p) => <Card key={p.id}>
-            <Text style={{ fontSize: 10, fontWeight: '800', color: C.blue }}>{p.category}</Text>
-            <Text style={{ fontSize: 15, fontWeight: '800', color: C.text }}>{p.name}</Text>
-            {!!p.image_url && <Image source={{ uri: p.image_url }} accessibilityLabel={p.name} style={{ width: '100%', height: 160, borderRadius: 12 }} resizeMode="cover" />}
-            {p.status === 'On Hold' && <Text style={{ padding: 9, borderRadius: 9, backgroundColor: '#fffbeb', color: '#92400e', fontSize: 11, lineHeight: 16 }}>Historical / citywide reference only. Not confirmed as a current barangay program. No registration available; please verify with the barangay office.</Text>}
-            {!!p.description && <Text style={{ fontSize: 12, lineHeight: 18, color: '#475569' }}>{p.description}</Text>}
-            <View style={{ gap: 4 }}>
-              <Text style={{ fontSize: 11, color: C.muted }}>Area: {p.purok || 'All Puroks'}</Text>
-              {!!p.venue && <Text style={{ fontSize: 11, color: C.muted }}>Venue: {p.venue}</Text>}
-              {!!p.event_start_at && <Text style={{ fontSize: 11, color: C.blue, fontWeight: '700' }}>Event: {phDate(p.event_start_at)} (PH time)</Text>}
-              {!!p.event_end_at && now > 0 && new Date(p.event_end_at).getTime() < now && <Text style={{ fontSize: 11, fontWeight: '700', color: C.muted }}>Completed</Text>}
-              {!!p.schedule_details && <Text style={{ fontSize: 11, color: C.muted }}>Schedule notes: {p.schedule_details}</Text>}
-              {!!p.requirements && <Text style={{ fontSize: 11, lineHeight: 16, color: C.muted }}>Requirements: {p.requirements}</Text>}
-              {!!p.registration_opens_at && <Text style={{ fontSize: 11, color: C.muted }}>Applications open: {phDate(p.registration_opens_at)}</Text>}
-              {!!p.registration_deadline && <Text style={{ fontSize: 11, color: C.muted }}>Apply by: {phDate(p.registration_deadline)}</Text>}
-              {!!p.max_participants && <Text style={{ fontSize: 11, color: C.muted }}>Capacity: {p.max_participants} slots (subject to availability)</Text>}
-              {(p.min_age || p.max_age) && <Text style={{ fontSize: 11, color: C.muted }}>Age: {p.min_age || 'Any'} – {p.max_age || 'Any'}</Text>}
-              <Text style={{ fontSize: 11, fontWeight: '700', color: p.registration_open ? C.green : '#b45309' }}>{p.registration_open ? 'Registration Open' : 'Registration Closed'}</Text>
-            </View>
-            <Button title={applications.find((a) => a.program_id === p.id)?.status ? `Application: ${applications.find((a) => a.program_id === p.id)?.status}` : applying === p.id ? 'Submitting...' : 'Join Program'}
-              disabled={!canApply(p) || applying !== null} loading={applying === p.id} onPress={() => void joinProgram(p.id)} />
-          </Card>)}
-      </> : <>
-        <Label>Barangay Announcements</Label>
-        {loading && announcements.length === 0 ? <ActivityIndicator color={C.blue} /> : announcements.length === 0
-          ? <Card><Text style={{ textAlign: 'center', color: C.muted, fontSize: 12 }}>No announcements yet.</Text></Card>
-          : announcements.map((a) => <Card key={a.id}>
-            <Row><Text style={{ fontSize: 10, fontWeight: '800', color: C.blue, textTransform: 'uppercase' }}>{a.category}</Text>
-              <Text style={{ fontSize: 10, color: C.muted }}>{new Date(a.created_at).toLocaleDateString()}</Text></Row>
-            <Text style={{ fontSize: 15, fontWeight: '800', color: C.text }}>{a.title}</Text>
-            {!!a.event_start_at && <Text style={{ fontSize: 11, color: C.blue, fontWeight: '700' }}>Event: {phDate(a.event_start_at)} (PH time)</Text>}
-            {!!a.venue && <Text style={{ fontSize: 11, color: C.muted }}>Venue: {a.venue}</Text>}
-            <Text style={{ fontSize: 12, lineHeight: 18, color: '#475569' }}>{a.description}</Text>
-          </Card>)}
-      </>}
-    </ScrollView>
-  </View>;
+    {activeTab === 'organizations' && <><PwaText style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>Community Organizations</PwaText>{loading ? <PwaText style={smallText}>Loading organizations...</PwaText> : organizations.length === 0 ? <View style={emptyCard}><PwaText style={smallText}>No active community organizations have been published.</PwaText></View> : organizations.map((organization) => <Card key={organization.id}><PwaText style={categoryBadge}>{organization.org_type}</PwaText><PwaText style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>{organization.name}</PwaText>{!!organization.description && <PwaText style={bodyText}>{organization.description}</PwaText>}{!!organization.president && <PwaText style={smallText}>President: {organization.president}</PwaText>}{!!organization.contact && <PwaText style={smallText}>Contact: {organization.contact}</PwaText>}</Card>)}</>}
+
+    {activeTab === 'announcements' && <><PwaText style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>Barangay Announcements</PwaText>{loading ? <PwaText style={smallText}>Loading announcements...</PwaText> : announcements.length === 0 ? <View style={emptyCard}><PwaText style={smallText}>No announcements yet.</PwaText></View> : announcements.map((announcement) => <Card key={announcement.id}><View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}><PwaText style={categoryBadge}>{announcement.category}</PwaText><PwaText style={smallText}>{new Date(announcement.created_at).toLocaleDateString()}</PwaText></View><PwaText style={{ fontSize: 15, fontWeight: '700', color: '#111827' }}>{announcement.title}</PwaText>{!!announcement.venue && <PwaText style={smallText}>Venue: {announcement.venue}</PwaText>}{!!announcement.event_start_at && <PwaText style={smallText}>Starts: {new Date(announcement.event_start_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}</PwaText>}{!!announcement.event_end_at && <PwaText style={smallText}>Ends: {new Date(announcement.event_end_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' })}</PwaText>}<PwaText style={bodyText}>{announcement.description}</PwaText></Card>)}</>}
+  </Page>;
 }
+
+const tabBar = { flexDirection: 'row' as const, gap: 4, borderRadius: 16, padding: 4, backgroundColor: '#f3f4f6' };
+const tabButton = { flex: 1, minHeight: 42, paddingHorizontal: 5, borderRadius: 12, alignItems: 'center' as const, justifyContent: 'center' as const };
+const activeTabStyle = { backgroundColor: '#fff', elevation: 1 };
+const applicationCard = { backgroundColor: '#f9fafb', padding: 12, borderRadius: 12, gap: 3 };
+const smallText = { color: '#6b7280', fontSize: 11 };
+const bodyText = { color: '#4b5563', fontSize: 12, lineHeight: 18 };
+const categoryBadge = { color: '#1d4ed8', backgroundColor: '#eff6ff', alignSelf: 'flex-start' as const, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12, fontSize: 10, fontWeight: '700' as const };
+const holdNote = { color: '#92400e', backgroundColor: '#fffbeb', padding: 10, fontSize: 11, fontWeight: '600' as const, borderRadius: 9 };
+const eventText = { color: '#1d4ed8', fontSize: 11, fontWeight: '600' as const };
+const emptyCard = { padding: 18, backgroundColor: '#fff', borderWidth: 1, borderStyle: 'dashed' as const, borderColor: '#e5e7eb', borderRadius: 14 };

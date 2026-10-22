@@ -1,10 +1,13 @@
 import { PwaText } from '@/components/pwa-text';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Image, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
 import { Button, C, Icon, Input } from '@/components/ui';
 import { ChatRequestForm } from '@/components/chat-request-form';
 import { requestedChatDocument } from '@/lib/chat-document-forms';
 import { apiBaseUrl, pwaApiUrl, supabase } from '@/lib/supabase';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioRecorder } from 'expo-audio';
+import { File } from 'expo-file-system';
 
 type Language = 'tgl' | 'ceb' | 'en';
 type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; error?: boolean; citations?: string[]; formType?: string; formSchema?: Record<string, unknown> };
@@ -28,6 +31,7 @@ const INTRO = {
   ceb: 'Pilia ang opisyal nga mga pangutana sa ubos alang sa dali nga tubag ug application form:',
   en: 'Select an official question below for instant verified answers and application forms:',
 };
+const LANGUAGE_KEY = 'barangay-ai-language';
 
 export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [language, setLanguage] = useState<Language>('tgl');
@@ -43,12 +47,20 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   const scroll = useRef<ScrollView>(null);
   const voiceRecorder = useRef<MediaRecorder | null>(null);
   const voiceStream = useRef<MediaStream | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioPlayer = useAudioPlayer(null);
   const isWelcome = messages.length === 0;
   const languageMeta = useMemo(() => LANGUAGES.find((entry) => entry.id === language) || LANGUAGES[0], [language]);
 
   useEffect(() => () => {
     if (voiceRecorder.current?.state === 'recording') voiceRecorder.current.stop();
     voiceStream.current?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  useEffect(() => {
+    void AsyncStorage.getItem(LANGUAGE_KEY).then((saved) => {
+      if (saved === 'tgl' || saved === 'ceb' || saved === 'en') setLanguage(saved);
+    }).catch(() => undefined);
   }, []);
 
   async function send(raw = input) {
@@ -102,8 +114,8 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   }
 
   function startVoice() {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') {
-      Alert.alert('Voice input', 'Audio recording is currently available in the web app. You can still send a typed message in Expo Go.');
+    if (Platform.OS !== 'web') {
+      void toggleNativeRecording();
       return;
     }
     if (voiceRecorder.current?.state === 'recording') {
@@ -135,6 +147,87 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     }).catch(() => setNotice('Microphone permission denied or unavailable.'));
   }
 
+  async function toggleNativeRecording() {
+    try {
+      if (voiceListening) {
+        await audioRecorder.stop();
+        setVoiceListening(false);
+        const uri = audioRecorder.uri;
+        if (!uri) throw new Error('The recording could not be saved. Please try again.');
+        await sendNativeVoiceRecording(uri);
+        return;
+      }
+      const permission = await AudioModule.requestRecordingPermissionsAsync();
+      if (!permission.granted) throw new Error('Microphone permission is required to send a voice message.');
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+      setNotice('Listening... Tap the microphone to finish.');
+      setVoiceListening(true);
+    } catch (cause) {
+      setVoiceListening(false);
+      setNotice(cause instanceof Error ? cause.message : 'Unable to start voice recording.');
+    }
+  }
+
+  async function sendNativeVoiceRecording(uri: string) {
+    const file = new File(uri);
+    if (!file.exists || file.size <= 0 || file.size > 4 * 1024 * 1024) {
+      setNotice('Recording must be under 4 MB. Please try a shorter question.');
+      return;
+    }
+    if (!apiBaseUrl) {
+      setNotice('Set EXPO_PUBLIC_API_BASE_URL to your existing Barangay AI API server to use voice.');
+      return;
+    }
+    setVoiceProcessing(true);
+    setNotice('Processing your voice message...');
+    try {
+      const audioBase64 = encodeBase64(new Uint8Array(await file.arrayBuffer()));
+      const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+      const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/api/v1/voice/converse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ audio_base64: audioBase64, mime_type: 'audio/mp4', language, session_id: apiSessionId }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || `Voice request failed (HTTP ${response.status}).`);
+      const reply = result.data;
+      if (!reply?.answer) throw new Error('Ate Sora returned an empty answer.');
+      const transcript = String(reply.transcript || '').trim();
+      const answer = String(reply.answer);
+      setMessages((items) => [...items,
+        ...(transcript ? [{ id: `vu-${Date.now()}`, role: 'user' as const, content: transcript }] : []),
+        { id: `va-${Date.now()}`, role: 'assistant' as const, content: answer, citations: Array.isArray(reply.citations) ? reply.citations : [] },
+      ]);
+      if (reply.audio?.audio_url) {
+        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+        audioPlayer.replace(reply.audio.audio_url);
+        audioPlayer.play();
+      }
+      if (user && supabase) {
+        const { data: sessionRow } = await supabase.from('chat_sessions')
+          .upsert({ user_id: user.id, session_token: sessionToken, last_active_at: new Date().toISOString() }, { onConflict: 'session_token' })
+          .select('id').single();
+        if (sessionRow?.id) {
+          await supabase.from('chat_messages').insert([
+            ...(transcript ? [{ user_id: user.id, sender: 'user', message: transcript, session_id: sessionRow.id }] : []),
+            { user_id: user.id, sender: 'ai', message: answer, citations: Array.isArray(reply.citations) ? reply.citations : [], session_id: sessionRow.id },
+          ]);
+        }
+      }
+      setNotice(reply.voice_error || '');
+    } catch (cause) {
+      const message = cause instanceof TypeError && /fetch/i.test(cause.message)
+        ? 'Cannot reach the existing Barangay AI API. Confirm its LAN address in .env.local.'
+        : cause instanceof Error ? cause.message : 'Voice request failed.';
+      setNotice(message);
+    } finally {
+      setVoiceProcessing(false);
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => undefined);
+    }
+  }
+
   async function sendVoiceRecording(blob: Blob) {
     if (blob.size === 0 || blob.size > 4 * 1024 * 1024) { setNotice('Recording must be under 4 MB. Please try a shorter question.'); return; }
     if (!apiBaseUrl) { setNotice('Set EXPO_PUBLIC_API_BASE_URL to your existing Barangay AI API server to use voice.'); return; }
@@ -146,9 +239,10 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         reader.onerror = () => reject(new Error('Unable to read voice recording.'));
         reader.readAsDataURL(blob);
       });
+      const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
       const response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/api/v1/voice/converse`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio_base64: base64, mime_type: blob.type.split(';')[0] || 'audio/webm', language, session_id: sessionToken }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+        body: JSON.stringify({ audio_base64: base64, mime_type: blob.type.split(';')[0] || 'audio/webm', language, session_id: apiSessionId }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || `Voice request failed (HTTP ${response.status}).`);
@@ -157,6 +251,11 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       const transcript = String(reply.transcript || '').trim();
       const answer = String(reply.answer);
       setMessages((items) => [...items, ...(transcript ? [{ id: `vu-${Date.now()}`, role: 'user' as const, content: transcript }] : []), { id: `va-${Date.now()}`, role: 'assistant' as const, content: answer, citations: Array.isArray(reply.citations) ? reply.citations : [] }]);
+      if (reply.audio?.audio_url) {
+        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+        audioPlayer.replace(reply.audio.audio_url);
+        audioPlayer.play();
+      }
       if (user && supabase) {
         const { data: sessionRow } = await supabase.from('chat_sessions').upsert({ user_id: user.id, session_token: sessionToken, last_active_at: new Date().toISOString() }, { onConflict: 'session_token' }).select('id').single();
         if (sessionRow?.id && transcript) {
@@ -167,10 +266,6 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         }
       }
       setNotice('');
-      if (reply.audio?.audio_url && Platform.OS === 'web') {
-        try { await new Audio(reply.audio.audio_url).play(); }
-        catch { setNotice('Ate Sora replied. Tap the reply audio control in a supported browser if playback was blocked.'); }
-      }
     } catch (cause) {
       const message = cause instanceof TypeError && /fetch/i.test(cause.message)
         ? 'Cannot reach the existing Barangay AI API. Start the PWA/API service and confirm the LAN address in .env.local.'
@@ -227,12 +322,28 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       <Pressable onPress={() => setLanguageOpen(false)} style={{ flex: 1, backgroundColor: '#0006', alignItems: 'center', justifyContent: 'center', padding: 28 }}>
         <View style={{ width: '100%', maxWidth: 360, backgroundColor: C.white, borderRadius: 18, padding: 18, gap: 9 }}>
           <PwaText style={{ fontSize: 15, fontWeight: '800', color: C.text }}>Response language</PwaText>
-          {LANGUAGES.map((entry) => <Pressable key={entry.id} onPress={() => { setLanguage(entry.id); setLanguageOpen(false); }} style={{ padding: 12, borderRadius: 11, backgroundColor: language === entry.id ? '#eff6ff' : C.white, borderWidth: 1, borderColor: language === entry.id ? '#bfdbfe' : C.border }}><PwaText style={{ color: language === entry.id ? C.blue : C.text, fontSize: 13, fontWeight: '700' }}>{entry.label}</PwaText></Pressable>)}
+          {LANGUAGES.map((entry) => <Pressable key={entry.id} onPress={() => { setLanguage(entry.id); void AsyncStorage.setItem(LANGUAGE_KEY, entry.id); setLanguageOpen(false); }} style={{ padding: 12, borderRadius: 11, backgroundColor: language === entry.id ? '#eff6ff' : C.white, borderWidth: 1, borderColor: language === entry.id ? '#bfdbfe' : C.border }}><PwaText style={{ color: language === entry.id ? C.blue : C.text, fontSize: 13, fontWeight: '700' }}>{entry.label}</PwaText></Pressable>)}
           <Button title="Close" secondary onPress={() => setLanguageOpen(false)} />
         </View>
       </Pressable>
     </Modal>
   </View>;
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  for (let index = 0; index < bytes.length; index += 3) {
+    const a = bytes[index];
+    const hasB = index + 1 < bytes.length;
+    const hasC = index + 2 < bytes.length;
+    const b = hasB ? bytes[index + 1] : 0;
+    const c = hasC ? bytes[index + 2] : 0;
+    result += alphabet[a >> 2] + alphabet[((a & 3) << 4) | (b >> 4)]
+      + (hasB ? alphabet[((b & 15) << 2) | (c >> 6)] : '=')
+      + (hasC ? alphabet[c & 63] : '=');
+  }
+  return result;
 }
 
 const circleControl = { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#f9fafb', alignItems: 'center' as const, justifyContent: 'center' as const };

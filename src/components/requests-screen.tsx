@@ -56,7 +56,8 @@ export function RequestsScreen({ go }: { go: (route: string) => void }) {
   async function submitPayment() {
     if (!supabase || !payRequest || submitting) return;
     const referenceNumber = reference.trim();
-    if (!referenceNumber) { setPaymentError('Enter the reference number from your payment receipt.'); return; }
+    if (!referenceNumber || referenceNumber.length > 120) { setPaymentError('Enter a valid payment reference (1–120 characters).'); return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9 _./-]*$/.test(referenceNumber)) { setPaymentError('Use only letters, numbers, spaces, hyphens, periods or slashes in the reference.'); return; }
     setSubmitting(true); setPaymentError('');
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();

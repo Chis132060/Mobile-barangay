@@ -4,3 +4,5 @@ export async function askLocalSora(_question: string, _language: 'tgl' | 'ceb' |
 }
 
 export async function prepareLocalSora(): Promise<'ready' | 'unsupported'> { return 'unsupported'; }
+
+export async function downloadSmallOfflineModel(_onProgress: (progress: number) => void): Promise<'ready' | 'unsupported'> { return 'unsupported'; }

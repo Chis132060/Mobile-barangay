@@ -230,9 +230,16 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       const networkFailure = cause instanceof TypeError || (cause instanceof Error && /network|fetch|offline|timed out|timeout|failed to fetch/i.test(cause.message));
       if (networkFailure || !apiBaseUrl && !pwaApiUrl) {
         setMessages(items => items.map(item => item.id === userMessageId ? { ...item, offline: true } : item));
-        const reply = offlineSoraReply(question, language);
-        if (reply) setMessages((items) => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
-        setNotice('Offline fallback: local FAQs only. Live AI, document submission, and status checks need internet.');
+        const companionAnswer = useCompanion ? await askLocalCompanion(question, language) : null;
+        const generated = companionAnswer || await askLocalSora(question, language);
+        if (generated) {
+          setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: generated, offline: true }]);
+          setNotice(companionAnswer ? 'Local GGUF companion response · No live barangay records.' : 'On-device AI response · No live barangay records.');
+        } else {
+          const reply = offlineSoraReply(question, language);
+          if (reply) setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
+          setNotice('Offline FAQ fallback · Live AI, document submission, and status checks need internet.');
+        }
       } else {
         const message = cause instanceof Error ? cause.message : 'The assistant is unavailable right now.';
         setMessages((items) => [...items, { id: `e-${Date.now()}`, role: 'assistant', content: message, error: true }]);

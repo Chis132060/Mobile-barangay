@@ -9,7 +9,7 @@ type Resident = { id: string; verification_status?: string | null; household_onb
 type Notice = { id: string; title: string; message: string; read_status: boolean };
 const SETTINGS = [
   { title: 'Notifications Settings', icon: 'notifications', color: '#3b82f6', body: 'In-app notifications are available. Native push notifications require device registration and backend delivery before they can be enabled.' },
-  { title: 'Privacy & Security', icon: 'shield', color: '#6366f1', body: 'Your personal details are encrypted and securely stored. Only authorized Barangay officials have access to resident records.' },
+  { title: 'Privacy & Security', icon: 'shield', color: '#6366f1', body: 'Your information is stored in the shared barangay system. Access should be limited by database security policies. For privacy or account data concerns, submit a support ticket.' },
   { title: 'Help & Support', icon: 'help', color: '#f59e0b', body: 'Submit a support ticket to barangay staff or ask Ate Sora in AI Chat.' },
 ];
 

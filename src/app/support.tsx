@@ -35,11 +35,24 @@ export default function SupportRoute() {
   }, []);
 
   useEffect(() => {
-    queueMicrotask(() => void reload());
-    if (!supabase) return;
-    const channel = supabase.channel('mobile-resident-support')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => void reload()).subscribe();
-    return () => { void supabase?.removeChannel(channel); };
+    let active = true;
+    let scopedChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+    queueMicrotask(() => { if (active) void reload(); });
+    async function subscribeForResident() {
+      if (!supabase) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!active || !user) return;
+      scopedChannel = supabase.channel('mobile-resident-support-' + user.id)
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'support_tickets',
+          filter: `resident_user_id=eq.${user.id}`,
+        }, () => { if (active) void reload(); }).subscribe();
+    }
+    void subscribeForResident();
+    return () => {
+      active = false;
+      if (scopedChannel) void supabase?.removeChannel(scopedChannel);
+    };
   }, [reload]);
 
   async function submit() {

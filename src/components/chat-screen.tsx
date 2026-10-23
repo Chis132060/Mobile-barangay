@@ -8,9 +8,15 @@ import { requestedChatDocument } from '@/lib/chat-document-forms';
 import { apiBaseUrl, pwaApiUrl, supabase } from '@/lib/supabase';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioRecorder } from 'expo-audio';
 import { File } from 'expo-file-system';
+import { offlineSoraReply } from '@/lib/offline-sora.mjs';
+import { useNetworkState } from 'expo-network';
+import { askLocalSora, prepareLocalSora, downloadSmallOfflineModel } from '@/lib/offline-llm';
+import { transcribeOfflineAudio } from '@/lib/offline-speech';
+import { askLocalCompanion } from '@/lib/local-companion';
+import { clearOfflineHistory, loadOfflineHistory, saveOfflineHistory } from '@/lib/offline-history';
 
 type Language = 'tgl' | 'ceb' | 'en';
-type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; error?: boolean; citations?: string[]; formType?: string; formSchema?: Record<string, unknown> };
+type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; offline?: boolean; error?: boolean; citations?: string[]; formType?: string; formSchema?: Record<string, unknown> };
 const LANGUAGES: { id: Language; label: string; code: string }[] = [
   { id: 'tgl', label: 'Filipino', code: 'TGL' },
   { id: 'ceb', label: 'Cebuano', code: 'CEB' },
@@ -32,16 +38,25 @@ const INTRO = {
   en: 'Select an official question below for instant verified answers and application forms:',
 };
 const LANGUAGE_KEY = 'barangay-ai-language';
+const OFFLINE_MODE_KEY = 'barangay-ai-force-offline';
+const LOCAL_COMPANION_KEY = 'barangay-ai-local-companion-opt-in';
 
 export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [language, setLanguage] = useState<Language>('tgl');
   const [languageOpen, setLanguageOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [historyOwner, setHistoryOwner] = useState<string | null>(null);
+  const previousHistoryOwner = useRef<string | null>(null);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [notice, setNotice] = useState('');
+  const [forceOffline, setForceOffline] = useState(false);
+  const [useCompanion, setUseCompanion] = useState(false);
+  const [preparingModel, setPreparingModel] = useState(false);
+  const network = useNetworkState();
+  const disconnected = network.isConnected === false || network.isInternetReachable === false;
   const [sessionToken] = useState(() => `expo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [apiSessionId] = useState(createSessionId);
   const scroll = useRef<ScrollView>(null);
@@ -63,15 +78,124 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     }).catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    void AsyncStorage.getItem(OFFLINE_MODE_KEY).then(value => {
+      if (value === 'true') setForceOffline(true);
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    void AsyncStorage.getItem(LOCAL_COMPANION_KEY)
+      .then(value => setUseCompanion(value === 'true'))
+      .catch(() => undefined);
+  }, []);
+
+  function toggleCompanion() {
+    const next = !useCompanion;
+    setUseCompanion(next);
+    void AsyncStorage.setItem(LOCAL_COMPANION_KEY, String(next)).catch(() => undefined);
+    setNotice(next
+      ? 'Local GGUF companion enabled (127.0.0.1:4891). Install and open the separate app, load a model and start its local API first. Only typed questions go to this localhost server.'
+      : 'Local GGUF companion disabled. Device AI and offline FAQs remain available.');
+  }
+
+  function toggleOfflineMode() {
+    const next = !forceOffline;
+    setForceOffline(next);
+    void AsyncStorage.setItem(OFFLINE_MODE_KEY, String(next)).catch(() => undefined);
+    setNotice(next ? 'Offline mode enabled. Local on-device AI will answer when ready, otherwise bundled FAQs. No chat API or Supabase calls for offline replies.' : 'Online AI enabled. Internet is required for live replies.');
+  }
+
+  useEffect(() => {
+    let active = true;
+    const owner = user?.id || 'guest';
+    void loadOfflineHistory(user?.id).then(saved => {
+      if (!active) return;
+      const previous = previousHistoryOwner.current;
+      if (previous && previous !== owner) {
+        setMessages(saved);
+        if (owner === 'guest' && previous !== 'guest') void clearOfflineHistory(previous);
+      } else {
+        setMessages(current => current.length ? current : saved);
+      }
+      previousHistoryOwner.current = owner;
+      setHistoryOwner(owner);
+    });
+    return () => { active = false; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (historyOwner !== (user?.id || 'guest')) return;
+    const offline = messages.filter((item): item is ChatMessage & { offline: true } => item.offline === true);
+    void saveOfflineHistory(user?.id, offline);
+  }, [messages, historyOwner, user?.id]);
+
+  async function setupOfflineAI() {
+    if (preparingModel) return;
+    if (disconnected) {
+      setNotice('Connect to the internet once to prepare a supported device model. Then test again in Airplane Mode.');
+      return;
+    }
+    setPreparingModel(true);
+    setNotice('Preparing the device AI model. Some Android devices download the model on first setup...');
+    try {
+      const result = await prepareLocalSora();
+      setNotice(result === 'ready'
+        ? 'On-device AI model ready. You can now test the OFF toggle in Airplane Mode.'
+        : 'This device does not support the built-in model, or it could not be prepared. Offline FAQs remain available.');
+    } catch {
+      setNotice('Device model setup failed. Offline FAQs remain available.');
+    } finally { setPreparingModel(false); }
+  }
+
+  async function downloadOfflineAI() {
+    if (preparingModel) return;
+    if (disconnected) {
+      setNotice('Connect to Wi-Fi to download the offline model (~0.5 GB). This is a one-time setup.');
+      return;
+    }
+    setPreparingModel(true);
+    setNotice('Downloading Qwen3 0.6B (~0.5 GB). Keep the app open and connected to Wi-Fi...');
+    try {
+      const result = await downloadSmallOfflineModel(progress => {
+        setNotice(`Downloading on-device AI: ${Math.round(progress * 100)}%. Avoid mobile data; this uses ~0.5 GB.`);
+      });
+      setNotice(result === 'ready'
+        ? 'Offline Qwen3 model downloaded and activated. Switch to OFF or Airplane Mode to ask new questions.'
+        : 'This device cannot run the downloadable model, or the download failed. Offline FAQs remain available.');
+    } catch {
+      setNotice('Offline model setup failed. Try again on Wi-Fi; offline FAQs still work.');
+    } finally { setPreparingModel(false); }
+  }
+
   async function send(raw = input) {
     const question = raw.trim();
     if (!question || busy) return;
     const formType = requestedChatDocument(question);
     setInput('');
     setNotice('');
-    setMessages((items) => [...items, { id: `u-${Date.now()}`, role: 'user', content: question }]);
+    const userMessageId = `u-${sessionToken}-${messages.length}`;
+    const offlineAtSend = forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false);
+    setMessages((items) => [...items, { id: userMessageId, role: 'user', content: question, offline: offlineAtSend }]);
     setBusy(true);
     let persistedSessionId: string | null = null;
+    // Browser offline signal is immediate; native network failures use the same local fallback.
+    const definitelyOffline = forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false);
+    if (definitelyOffline) {
+      try {
+        const companionAnswer = useCompanion ? await askLocalCompanion(question, language) : null;
+        const generated = companionAnswer || await askLocalSora(question, language);
+        if (generated) {
+          setMessages(items => [...items, { id: `local-${Date.now()}`, role: 'assistant', content: generated, offline: true }]);
+          setNotice(companionAnswer ? 'Local GGUF companion response · sent only to device loopback. No live barangay records.' : 'On-device AI response · No internet used for generation. Live barangay records are unavailable.');
+        } else {
+          const reply = offlineSoraReply(question, language);
+          if (reply) setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
+          setNotice('Offline FAQ fallback · Device AI model unavailable or not yet downloaded.');
+        }
+      } finally { setBusy(false); }
+      return;
+    }
     try {
       if (user && supabase) {
         const { data, error } = await supabase.from('chat_sessions').upsert({ user_id: user.id, session_token: sessionToken, last_active_at: new Date().toISOString() }, { onConflict: 'session_token' }).select('id').single();
@@ -103,10 +227,23 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         await supabase.from('chat_sessions').update({ last_active_at: new Date().toISOString() }).eq('session_token', sessionToken).eq('user_id', user.id);
       }
     } catch (cause) {
-      const message = cause instanceof TypeError && /fetch/i.test(cause.message)
-        ? `Cannot reach Ate Sora at ${(apiBaseUrl || pwaApiUrl || 'configured service URL')}. Start the existing API server on port 8000 (or PWA server on port 5173) and make sure .env.local uses this computer's LAN address.`
-        : cause instanceof Error ? cause.message : 'The assistant is unavailable right now.';
-      setMessages((items) => [...items, { id: `e-${Date.now()}`, role: 'assistant', content: message, error: true }]);
+      const networkFailure = cause instanceof TypeError || (cause instanceof Error && /network|fetch|offline|timed out|timeout|failed to fetch/i.test(cause.message));
+      if (networkFailure || !apiBaseUrl && !pwaApiUrl) {
+        setMessages(items => items.map(item => item.id === userMessageId ? { ...item, offline: true } : item));
+        const companionAnswer = useCompanion ? await askLocalCompanion(question, language) : null;
+        const generated = companionAnswer || await askLocalSora(question, language);
+        if (generated) {
+          setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: generated, offline: true }]);
+          setNotice(companionAnswer ? 'Local GGUF companion response · No live barangay records.' : 'On-device AI response · No live barangay records.');
+        } else {
+          const reply = offlineSoraReply(question, language);
+          if (reply) setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
+          setNotice('Offline FAQ fallback · Live AI, document submission, and status checks need internet.');
+        }
+      } else {
+        const message = cause instanceof Error ? cause.message : 'The assistant is unavailable right now.';
+        setMessages((items) => [...items, { id: `e-${Date.now()}`, role: 'assistant', content: message, error: true }]);
+      }
     } finally {
       setBusy(false);
       requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: true }));
@@ -114,6 +251,10 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   }
 
   function startVoice() {
+    if (Platform.OS === 'web' && (forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false))) {
+      setNotice('Offline voice transcription requires a supported native Android or iOS build. Please type on the web.');
+      return;
+    }
     if (Platform.OS !== 'web') {
       void toggleNativeRecording();
       return;
@@ -174,6 +315,18 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     const file = new File(uri);
     if (!file.exists || file.size <= 0 || file.size > 4 * 1024 * 1024) {
       setNotice('Recording must be under 4 MB. Please try a shorter question.');
+      return;
+    }
+    if (forceOffline || disconnected) {
+      setVoiceProcessing(true);
+      try {
+        const transcript = await transcribeOfflineAudio(uri, language);
+        if (transcript) {
+          await send(transcript);
+        } else {
+          setNotice('Offline speech model or selected language is not available on this phone. Type your question; offline text AI and FAQs can still work.');
+        }
+      } finally { setVoiceProcessing(false); }
       return;
     }
     if (!apiBaseUrl) {
@@ -281,12 +434,29 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         <View><PwaText style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>Ate Sora</PwaText><PwaText style={{ fontSize: 10, color: user ? '#16a34a' : '#9ca3af', marginTop: 2 }}>{user ? '●  Resident Mode' : '●  Guest Mode'}</PwaText></View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        {!isWelcome && <Pressable accessibilityLabel="New conversation" onPress={() => { setMessages([]); setNotice(''); }} style={circleControl}><Icon name="refresh" size={17} color="#64748b" /></Pressable>}
+        {!isWelcome && <Pressable accessibilityLabel="New conversation" onPress={() => { setMessages([]); void clearOfflineHistory(user?.id); setNotice(''); }} style={circleControl}><Icon name="refresh" size={17} color="#64748b" /></Pressable>}
+        <Pressable accessibilityRole="button" accessibilityLabel={forceOffline ? 'Switch to online AI' : 'Use offline FAQs without internet'} accessibilityState={{ selected: forceOffline }} onPress={toggleOfflineMode} style={[circleControl, { width: 48, backgroundColor: forceOffline ? '#fef3c7' : '#f9fafb' }]}>
+          <PwaText style={{ color: forceOffline ? '#92400e' : '#475569', fontSize: 10, fontWeight: '800' }}>{forceOffline ? 'OFF' : 'AUTO'}</PwaText>
+        </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Change response language" onPress={() => setLanguageOpen(true)} style={[circleControl, { width: 48 }]}><PwaText style={{ fontSize: 11, color: '#475569', fontWeight: '800' }}>{languageMeta.code}</PwaText></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel={voiceListening ? 'Stop voice recording' : 'Voice input'} onPress={startVoice} disabled={voiceProcessing} style={[circleControl, (voiceListening || voiceProcessing) && { backgroundColor: '#dbeafe', borderColor: C.blue }]}><Icon name={voiceListening ? 'stop' : 'mic_none'} size={17} color={voiceListening || voiceProcessing ? C.blue : '#64748b'} /></Pressable>
       </View>
     </View>
 
+    {Platform.OS !== 'web' && !disconnected && <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#eff6ff', borderBottomColor: '#dbeafe', borderBottomWidth: 1 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Prepare built-in AI" disabled={preparingModel} onPress={() => void setupOfflineAI()} style={{ flex: 1 }}>
+        <PwaText style={{ fontSize: 11, fontWeight: '700', color: C.blue }}>{preparingModel ? 'Preparing model...' : 'Prepare device AI'}</PwaText>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Download Qwen3 offline model about 500 megabytes" disabled={preparingModel} onPress={() => void downloadOfflineAI()} style={{ flex: 1 }}>
+        <PwaText style={{ fontSize: 11, fontWeight: '700', color: C.blue }}>Download offline model (~0.5 GB)</PwaText>
+      </Pressable>
+    </View>}
+    {Platform.OS !== 'web' && <Pressable accessibilityRole="button" accessibilityLabel={useCompanion ? 'Disable local GGUF companion' : 'Enable local GGUF companion (experimental)'} onPress={toggleCompanion} style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' }}>
+      <PwaText style={{ fontSize: 11, color: '#475569' }}>{useCompanion ? 'GGUF companion: ON · local port 4891 (experimental)' : 'GGUF companion: OFF · optional separate local AI app'}</PwaText>
+    </Pressable>}
+    {(forceOffline || disconnected) && <View style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }}>
+      <PwaText style={{ fontSize: 11, color: '#92400e' }}>Offline FAQ mode · Basic guidance only · No live AI, voice transcription or barangay records</PwaText>
+    </View>}
     {!user && <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#f9fafb', borderBottomWidth: 1, borderBottomColor: '#f3f4f6', flexDirection: 'row', alignItems: 'center', gap: 7 }}><Icon name="public" size={14} color="#9ca3af" /><PwaText style={{ flex: 1, fontSize: 10, color: '#9ca3af' }}>Browsing as guest. Sign in to track requests and submit applications.</PwaText></View>}
     {!!notice && <PwaText style={{ color: '#9a3412', backgroundColor: '#fff7ed', paddingHorizontal: 14, paddingVertical: 8, fontSize: 11 }}>{voiceListening ? 'Listening... Tap the microphone to finish.' : notice}</PwaText>}
 
@@ -306,6 +476,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
           <View style={{ paddingHorizontal: 14, paddingVertical: 11, backgroundColor: message.role === 'user' ? C.blue : message.error ? '#f9fafb' : '#f9fafb', borderRadius: 16, borderBottomLeftRadius: message.role === 'assistant' ? 3 : 16, borderBottomRightRadius: message.role === 'user' ? 3 : 16, borderWidth: message.role === 'assistant' ? 1 : 0, borderColor: message.error ? '#fecaca' : '#f3f4f6' }}>
             <PwaText style={{ fontSize: 12, lineHeight: 19, color: message.role === 'user' ? C.white : message.error ? C.red : '#1f2937' }}>{message.content}</PwaText>
           </View>
+          {message.offline && <PwaText style={{ fontSize: 10, color: '#a16207', paddingHorizontal: 4 }}>Offline FAQ · No internet or live records</PwaText>}
           {!!message.citations?.length && <PwaText style={{ fontSize: 10, color: C.muted, paddingHorizontal: 4 }}>Sources: {message.citations.slice(0, 3).join(', ')}</PwaText>}
           {!!message.formType && <ChatRequestForm type={message.formType as 'clearance' | 'indigency' | 'residency' | 'business'} sessionToken={sessionToken} formSchema={message.formSchema} />}
         </View>)}

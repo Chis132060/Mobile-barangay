@@ -12,6 +12,7 @@ import { offlineSoraReply } from '@/lib/offline-sora.mjs';
 import { useNetworkState } from 'expo-network';
 import { askLocalSora, prepareLocalSora, downloadSmallOfflineModel } from '@/lib/offline-llm';
 import { transcribeOfflineAudio } from '@/lib/offline-speech';
+import { askLocalCompanion } from '@/lib/local-companion';
 import { clearOfflineHistory, loadOfflineHistory, saveOfflineHistory } from '@/lib/offline-history';
 
 type Language = 'tgl' | 'ceb' | 'en';
@@ -38,6 +39,7 @@ const INTRO = {
 };
 const LANGUAGE_KEY = 'barangay-ai-language';
 const OFFLINE_MODE_KEY = 'barangay-ai-force-offline';
+const LOCAL_COMPANION_KEY = 'barangay-ai-local-companion-opt-in';
 
 export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [language, setLanguage] = useState<Language>('tgl');
@@ -51,6 +53,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [notice, setNotice] = useState('');
   const [forceOffline, setForceOffline] = useState(false);
+  const [useCompanion, setUseCompanion] = useState(false);
   const [preparingModel, setPreparingModel] = useState(false);
   const network = useNetworkState();
   const disconnected = network.isConnected === false || network.isInternetReachable === false;
@@ -80,6 +83,21 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       if (value === 'true') setForceOffline(true);
     }).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    void AsyncStorage.getItem(LOCAL_COMPANION_KEY)
+      .then(value => setUseCompanion(value === 'true'))
+      .catch(() => undefined);
+  }, []);
+
+  function toggleCompanion() {
+    const next = !useCompanion;
+    setUseCompanion(next);
+    void AsyncStorage.setItem(LOCAL_COMPANION_KEY, String(next)).catch(() => undefined);
+    setNotice(next
+      ? 'Local GGUF companion enabled (127.0.0.1:4891). Install and open the separate app, load a model and start its local API first. Only typed questions go to this localhost server.'
+      : 'Local GGUF companion disabled. Device AI and offline FAQs remain available.');
+  }
 
   function toggleOfflineMode() {
     const next = !forceOffline;
@@ -165,10 +183,11 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     const definitelyOffline = forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false);
     if (definitelyOffline) {
       try {
-        const generated = await askLocalSora(question, language);
+        const companionAnswer = useCompanion ? await askLocalCompanion(question, language) : null;
+        const generated = companionAnswer || await askLocalSora(question, language);
         if (generated) {
           setMessages(items => [...items, { id: `local-${Date.now()}`, role: 'assistant', content: generated, offline: true }]);
-          setNotice('On-device AI response · No internet used for generation. Live barangay records are unavailable.');
+          setNotice(companionAnswer ? 'Local GGUF companion response · sent only to device loopback. No live barangay records.' : 'On-device AI response · No internet used for generation. Live barangay records are unavailable.');
         } else {
           const reply = offlineSoraReply(question, language);
           if (reply) setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
@@ -425,6 +444,9 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         <PwaText style={{ fontSize: 11, fontWeight: '700', color: C.blue }}>Download offline model (~0.5 GB)</PwaText>
       </Pressable>
     </View>}
+    {Platform.OS !== 'web' && <Pressable accessibilityRole="button" accessibilityLabel={useCompanion ? 'Disable local GGUF companion' : 'Enable local GGUF companion (experimental)'} onPress={toggleCompanion} style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' }}>
+      <PwaText style={{ fontSize: 11, color: '#475569' }}>{useCompanion ? 'GGUF companion: ON · local port 4891 (experimental)' : 'GGUF companion: OFF · optional separate local AI app'}</PwaText>
+    </Pressable>}
     {(forceOffline || disconnected) && <View style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }}>
       <PwaText style={{ fontSize: 11, color: '#92400e' }}>Offline FAQ mode · Basic guidance only · No live AI, voice transcription or barangay records</PwaText>
     </View>}

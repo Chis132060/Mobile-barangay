@@ -53,7 +53,7 @@ export default function SupportRoute() {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw new Error('Please sign in first.');
       const { error: insertError } = await supabase.from('support_tickets')
-        .insert({ resident_user_id: user.id, category, subject: s, description: d, status: 'Open' });
+        .insert({ resident_user_id: user.id, category, subject: s, description: d });
       if (insertError) throw insertError;
       setSubject(''); setDescription('');
       Alert.alert('Submitted', 'Your support ticket has been sent to barangay staff.');

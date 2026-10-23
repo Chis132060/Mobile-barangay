@@ -10,6 +10,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAu
 import { File } from 'expo-file-system';
 import { offlineSoraReply } from '@/lib/offline-sora.mjs';
 import { useNetworkState } from 'expo-network';
+import { askLocalSora } from '@/lib/offline-llm';
 import { clearOfflineHistory, loadOfflineHistory, saveOfflineHistory } from '@/lib/offline-history';
 
 type Language = 'tgl' | 'ceb' | 'en';
@@ -123,10 +124,17 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     // Browser offline signal is immediate; native network failures use the same local fallback.
     const definitelyOffline = forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false);
     if (definitelyOffline) {
-      const reply = offlineSoraReply(question, language);
-      if (reply) setMessages((items) => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
-      setNotice('Offline mode: local FAQs only. Live AI and barangay data are unavailable.');
-      setBusy(false);
+      try {
+        const generated = await askLocalSora(question, language);
+        if (generated) {
+          setMessages(items => [...items, { id: `local-${Date.now()}`, role: 'assistant', content: generated, offline: true }]);
+          setNotice('On-device AI response · No internet used for generation. Live barangay records are unavailable.');
+        } else {
+          const reply = offlineSoraReply(question, language);
+          if (reply) setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
+          setNotice('Offline FAQ fallback · Device AI model unavailable or not yet downloaded.');
+        }
+      } finally { setBusy(false); }
       return;
     }
     try {

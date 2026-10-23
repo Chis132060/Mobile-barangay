@@ -10,6 +10,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAu
 import { File } from 'expo-file-system';
 import { offlineSoraReply } from '@/lib/offline-sora.mjs';
 import { useNetworkState } from 'expo-network';
+import { clearOfflineHistory, loadOfflineHistory, saveOfflineHistory } from '@/lib/offline-history';
 
 type Language = 'tgl' | 'ceb' | 'en';
 type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; offline?: boolean; error?: boolean; citations?: string[]; formType?: string; formSchema?: Record<string, unknown> };
@@ -40,6 +41,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [language, setLanguage] = useState<Language>('tgl');
   const [languageOpen, setLanguageOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
@@ -82,13 +84,31 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     setNotice(next ? 'Offline FAQ enabled. Messages stay on your device during this session; no AI API or Supabase calls are made for offline replies.' : 'Online AI enabled. Internet is required for live replies.');
   }
 
+  useEffect(() => {
+    let active = true;
+    void loadOfflineHistory(user?.id).then(saved => {
+      if (!active) return;
+      setMessages(current => current.length ? current : saved);
+      setHistoryReady(true);
+    });
+    return () => { active = false; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!historyReady) return;
+    const offline = messages.filter((item): item is ChatMessage & { offline: true } => item.offline === true);
+    void saveOfflineHistory(user?.id, offline);
+  }, [messages, historyReady, user?.id]);
+
   async function send(raw = input) {
     const question = raw.trim();
     if (!question || busy) return;
     const formType = requestedChatDocument(question);
     setInput('');
     setNotice('');
-    setMessages((items) => [...items, { id: `u-${Date.now()}`, role: 'user', content: question }]);
+    const userMessageId = `u-${Date.now()}`;
+    const offlineAtSend = forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false);
+    setMessages((items) => [...items, { id: userMessageId, role: 'user', content: question, offline: offlineAtSend }]);
     setBusy(true);
     let persistedSessionId: string | null = null;
     // Browser offline signal is immediate; native network failures use the same local fallback.
@@ -133,6 +153,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     } catch (cause) {
       const networkFailure = cause instanceof TypeError || (cause instanceof Error && /network|fetch|offline|timed out|timeout|failed to fetch/i.test(cause.message));
       if (networkFailure || !apiBaseUrl && !pwaApiUrl) {
+        setMessages(items => items.map(item => item.id === userMessageId ? { ...item, offline: true } : item));
         const reply = offlineSoraReply(question, language);
         if (reply) setMessages((items) => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
         setNotice('Offline fallback: local FAQs only. Live AI, document submission, and status checks need internet.');
@@ -318,7 +339,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         <View><PwaText style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>Ate Sora</PwaText><PwaText style={{ fontSize: 10, color: user ? '#16a34a' : '#9ca3af', marginTop: 2 }}>{user ? '●  Resident Mode' : '●  Guest Mode'}</PwaText></View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        {!isWelcome && <Pressable accessibilityLabel="New conversation" onPress={() => { setMessages([]); setNotice(''); }} style={circleControl}><Icon name="refresh" size={17} color="#64748b" /></Pressable>}
+        {!isWelcome && <Pressable accessibilityLabel="New conversation" onPress={() => { setMessages([]); void clearOfflineHistory(user?.id); setNotice(''); }} style={circleControl}><Icon name="refresh" size={17} color="#64748b" /></Pressable>}
         <Pressable accessibilityRole="button" accessibilityLabel={forceOffline ? 'Switch to online AI' : 'Use offline FAQs without internet'} accessibilityState={{ selected: forceOffline }} onPress={toggleOfflineMode} style={[circleControl, { width: 48, backgroundColor: forceOffline ? '#fef3c7' : '#f9fafb' }]}>
           <PwaText style={{ color: forceOffline ? '#92400e' : '#475569', fontSize: 10, fontWeight: '800' }}>{forceOffline ? 'OFF' : 'AUTO'}</PwaText>
         </Pressable>

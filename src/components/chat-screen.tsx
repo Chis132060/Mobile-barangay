@@ -33,6 +33,7 @@ const INTRO = {
   en: 'Select an official question below for instant verified answers and application forms:',
 };
 const LANGUAGE_KEY = 'barangay-ai-language';
+const OFFLINE_MODE_KEY = 'barangay-ai-force-offline';
 
 export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [language, setLanguage] = useState<Language>('tgl');
@@ -43,6 +44,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [notice, setNotice] = useState('');
+  const [forceOffline, setForceOffline] = useState(false);
   const [sessionToken] = useState(() => `expo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [apiSessionId] = useState(createSessionId);
   const scroll = useRef<ScrollView>(null);
@@ -64,6 +66,21 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     }).catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    void AsyncStorage.getItem(OFFLINE_MODE_KEY).then(value => {
+      if (value === 'true') setForceOffline(true);
+    }).catch(() => undefined);
+  }, []);
+
+  function toggleOfflineMode() {
+    setForceOffline(current => {
+      const next = !current;
+      void AsyncStorage.setItem(OFFLINE_MODE_KEY, String(next)).catch(() => undefined);
+      setNotice(next ? 'Offline FAQ enabled. Messages stay on your device during this session; no AI API or Supabase calls are made for offline replies.' : 'Online AI enabled. Internet is required for live replies.');
+      return next;
+    });
+  }
+
   async function send(raw = input) {
     const question = raw.trim();
     if (!question || busy) return;
@@ -74,7 +91,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     setBusy(true);
     let persistedSessionId: string | null = null;
     // Browser offline signal is immediate; native network failures use the same local fallback.
-    const definitelyOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const definitelyOffline = forceOffline || (typeof navigator !== 'undefined' && navigator.onLine === false);
     if (definitelyOffline) {
       const reply = offlineSoraReply(question, language);
       if (reply) setMessages((items) => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
@@ -297,6 +314,9 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         {!isWelcome && <Pressable accessibilityLabel="New conversation" onPress={() => { setMessages([]); setNotice(''); }} style={circleControl}><Icon name="refresh" size={17} color="#64748b" /></Pressable>}
+        <Pressable accessibilityRole="button" accessibilityLabel={forceOffline ? 'Switch to online AI' : 'Use offline FAQs without internet'} accessibilityState={{ selected: forceOffline }} onPress={toggleOfflineMode} style={[circleControl, { width: 48, backgroundColor: forceOffline ? '#fef3c7' : '#f9fafb' }]}>
+          <PwaText style={{ color: forceOffline ? '#92400e' : '#475569', fontSize: 10, fontWeight: '800' }}>{forceOffline ? 'OFF' : 'AUTO'}</PwaText>
+        </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Change response language" onPress={() => setLanguageOpen(true)} style={[circleControl, { width: 48 }]}><PwaText style={{ fontSize: 11, color: '#475569', fontWeight: '800' }}>{languageMeta.code}</PwaText></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel={voiceListening ? 'Stop voice recording' : 'Voice input'} onPress={startVoice} disabled={voiceProcessing} style={[circleControl, (voiceListening || voiceProcessing) && { backgroundColor: '#dbeafe', borderColor: C.blue }]}><Icon name={voiceListening ? 'stop' : 'mic_none'} size={17} color={voiceListening || voiceProcessing ? C.blue : '#64748b'} /></Pressable>
       </View>

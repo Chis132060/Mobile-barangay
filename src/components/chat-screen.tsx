@@ -10,7 +10,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAu
 import { File } from 'expo-file-system';
 import { offlineSoraReply } from '@/lib/offline-sora.mjs';
 import { useNetworkState } from 'expo-network';
-import { askLocalSora, prepareLocalSora } from '@/lib/offline-llm';
+import { askLocalSora, prepareLocalSora, downloadSmallOfflineModel } from '@/lib/offline-llm';
 import { transcribeOfflineAudio } from '@/lib/offline-speech';
 import { clearOfflineHistory, loadOfflineHistory, saveOfflineHistory } from '@/lib/offline-history';
 
@@ -127,6 +127,26 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         : 'This device does not support the built-in model, or it could not be prepared. Offline FAQs remain available.');
     } catch {
       setNotice('Device model setup failed. Offline FAQs remain available.');
+    } finally { setPreparingModel(false); }
+  }
+
+  async function downloadOfflineAI() {
+    if (preparingModel) return;
+    if (disconnected) {
+      setNotice('Connect to Wi-Fi to download the offline model (~0.5 GB). This is a one-time setup.');
+      return;
+    }
+    setPreparingModel(true);
+    setNotice('Downloading Qwen3 0.6B (~0.5 GB). Keep the app open and connected to Wi-Fi...');
+    try {
+      const result = await downloadSmallOfflineModel(progress => {
+        setNotice(`Downloading on-device AI: ${Math.round(progress * 100)}%. Avoid mobile data; this uses ~0.5 GB.`);
+      });
+      setNotice(result === 'ready'
+        ? 'Offline Qwen3 model downloaded and activated. Switch to OFF or Airplane Mode to ask new questions.'
+        : 'This device cannot run the downloadable model, or the download failed. Offline FAQs remain available.');
+    } catch {
+      setNotice('Offline model setup failed. Try again on Wi-Fi; offline FAQs still work.');
     } finally { setPreparingModel(false); }
   }
 
@@ -397,9 +417,14 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       </View>
     </View>
 
-    {Platform.OS !== 'web' && !disconnected && <Pressable accessibilityRole="button" accessibilityLabel="Prepare on-device AI for offline use" disabled={preparingModel} onPress={() => void setupOfflineAI()} style={{ paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#eff6ff', borderBottomColor: '#dbeafe', borderBottomWidth: 1 }}>
-      <PwaText style={{ fontSize: 11, fontWeight: '700', color: C.blue }}>{preparingModel ? 'Preparing offline AI model...' : 'Prepare on-device AI (once, while online)'}</PwaText>
-    </Pressable>}
+    {Platform.OS !== 'web' && !disconnected && <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#eff6ff', borderBottomColor: '#dbeafe', borderBottomWidth: 1 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Prepare built-in AI" disabled={preparingModel} onPress={() => void setupOfflineAI()} style={{ flex: 1 }}>
+        <PwaText style={{ fontSize: 11, fontWeight: '700', color: C.blue }}>{preparingModel ? 'Preparing model...' : 'Prepare device AI'}</PwaText>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Download Qwen3 offline model about 500 megabytes" disabled={preparingModel} onPress={() => void downloadOfflineAI()} style={{ flex: 1 }}>
+        <PwaText style={{ fontSize: 11, fontWeight: '700', color: C.blue }}>Download offline model (~0.5 GB)</PwaText>
+      </Pressable>
+    </View>}
     {(forceOffline || disconnected) && <View style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }}>
       <PwaText style={{ fontSize: 11, color: '#92400e' }}>Offline FAQ mode · Basic guidance only · No live AI, voice transcription or barangay records</PwaText>
     </View>}

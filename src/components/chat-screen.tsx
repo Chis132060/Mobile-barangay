@@ -10,7 +10,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAu
 import { File } from 'expo-file-system';
 import { offlineSoraReply } from '@/lib/offline-sora.mjs';
 import { useNetworkState } from 'expo-network';
-import { askLocalSora } from '@/lib/offline-llm';
+import { askLocalSora, prepareLocalSora } from '@/lib/offline-llm';
 import { clearOfflineHistory, loadOfflineHistory, saveOfflineHistory } from '@/lib/offline-history';
 
 type Language = 'tgl' | 'ceb' | 'en';
@@ -50,6 +50,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [notice, setNotice] = useState('');
   const [forceOffline, setForceOffline] = useState(false);
+  const [preparingModel, setPreparingModel] = useState(false);
   const network = useNetworkState();
   const disconnected = network.isConnected === false || network.isInternetReachable === false;
   const [sessionToken] = useState(() => `expo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -83,7 +84,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     const next = !forceOffline;
     setForceOffline(next);
     void AsyncStorage.setItem(OFFLINE_MODE_KEY, String(next)).catch(() => undefined);
-    setNotice(next ? 'Offline FAQ enabled. Messages stay on your device during this session; no AI API or Supabase calls are made for offline replies.' : 'Online AI enabled. Internet is required for live replies.');
+    setNotice(next ? 'Offline mode enabled. Local on-device AI will answer when ready, otherwise bundled FAQs. No chat API or Supabase calls for offline replies.' : 'Online AI enabled. Internet is required for live replies.');
   }
 
   useEffect(() => {
@@ -109,6 +110,24 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     const offline = messages.filter((item): item is ChatMessage & { offline: true } => item.offline === true);
     void saveOfflineHistory(user?.id, offline);
   }, [messages, historyOwner, user?.id]);
+
+  async function setupOfflineAI() {
+    if (preparingModel) return;
+    if (disconnected) {
+      setNotice('Connect to the internet once to prepare a supported device model. Then test again in Airplane Mode.');
+      return;
+    }
+    setPreparingModel(true);
+    setNotice('Preparing the device AI model. Some Android devices download the model on first setup...');
+    try {
+      const result = await prepareLocalSora();
+      setNotice(result === 'ready'
+        ? 'On-device AI model ready. You can now test the OFF toggle in Airplane Mode.'
+        : 'This device does not support the built-in model, or it could not be prepared. Offline FAQs remain available.');
+    } catch {
+      setNotice('Device model setup failed. Offline FAQs remain available.');
+    } finally { setPreparingModel(false); }
+  }
 
   async function send(raw = input) {
     const question = raw.trim();
@@ -365,6 +384,9 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       </View>
     </View>
 
+    {Platform.OS !== 'web' && !disconnected && <Pressable accessibilityRole="button" accessibilityLabel="Prepare on-device AI for offline use" disabled={preparingModel} onPress={() => void setupOfflineAI()} style={{ paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#eff6ff', borderBottomColor: '#dbeafe', borderBottomWidth: 1 }}>
+      <PwaText style={{ fontSize: 11, fontWeight: '700', color: C.blue }}>{preparingModel ? 'Preparing offline AI model...' : 'Prepare on-device AI (once, while online)'}</PwaText>
+    </Pressable>}
     {(forceOffline || disconnected) && <View style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }}>
       <PwaText style={{ fontSize: 11, color: '#92400e' }}>Offline FAQ mode · Basic guidance only · No live AI, voice transcription or barangay records</PwaText>
     </View>}

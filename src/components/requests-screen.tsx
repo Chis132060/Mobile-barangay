@@ -54,9 +54,10 @@ export function RequestsScreen({ go }: { go: (route: string) => void }) {
 
   const filtered = useMemo(() => requests.filter((request) => filter === 'All' || (filter === 'Ready for Pickup' ? /ready|pickup/i.test(request.status) : request.status.toLowerCase().includes(filter.toLowerCase()))), [requests, filter]);
   async function submitPayment() {
-    if (!supabase || !payRequest) return;
+    if (!supabase || !payRequest || submitting) return;
     const referenceNumber = reference.trim();
-    if (!referenceNumber) { setPaymentError('Enter the reference number from your payment receipt.'); return; }
+    if (!referenceNumber || referenceNumber.length > 120) { setPaymentError('Enter a valid payment reference (1–120 characters).'); return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9 _./-]*$/.test(referenceNumber)) { setPaymentError('Use only letters, numbers, spaces, hyphens, periods or slashes in the reference.'); return; }
     setSubmitting(true); setPaymentError('');
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -69,12 +70,24 @@ export function RequestsScreen({ go }: { go: (route: string) => void }) {
       if (request.payment_status === 'Paid' || request.payment_status === 'Pending') throw new Error(`Payment is already ${request.payment_status}.`);
       const amount = Number(request.fee_amount || 0);
       if (amount <= 0) throw new Error('This request is free.');
+      // A previous insert may have succeeded even if the subsequent request update failed.
+      // Reconcile that situation instead of creating a second payment reference.
+      const { data: existingPayment, error: existingError } = await supabase.from('payments')
+        .select('id,reference_number,status').eq('request_id', payRequest.id)
+        .eq('resident_id', resident.id).in('status', ['Pending', 'Paid'])
+        .limit(1).maybeSingle();
+      if (existingError) throw new Error('Could not verify existing payment records. Please retry later.');
+      if (existingPayment) {
+        throw new Error(existingPayment.status === 'Paid'
+          ? 'This request already has a verified payment.'
+          : 'A payment reference is already pending staff verification. Do not submit a duplicate; contact barangay staff if the request status is out of sync.');
+      }
       // payments.resident_id references residents.id (not auth.users.id).
       const { error: paymentError } = await supabase.from('payments').insert({ request_id: payRequest.id, resident_id: resident.id, amount, provider: 'QR_PAY', reference_number: referenceNumber, status: 'Pending' });
       if (paymentError?.code === '23505') throw new Error('This reference number has already been submitted or you already have a pending payment.');
       if (paymentError) throw new Error(`Failed to submit payment: ${paymentError.message}`);
-      const { error: updateError } = await supabase.from('document_requests').update({ payment_status: 'Pending' }).eq('id', payRequest.id);
-      if (updateError) throw new Error('Payment recorded, but the request status could not be updated.');
+      const { error: updateError } = await supabase.from('document_requests').update({ payment_status: 'Pending' }).eq('id', payRequest.id).eq('resident_id', resident.id);
+      if (updateError) throw new Error('Payment reference was recorded, but the request status could not be updated. Do not submit a second reference; contact barangay staff for reconciliation.');
       setPayRequest(null); setScannedQR(''); setReference(''); Alert.alert('Payment reference submitted', 'Barangay staff will verify your payment.'); await load();
     } catch (cause) { setPaymentError(cause instanceof Error ? cause.message : 'Unable to submit payment.'); }
     finally { setSubmitting(false); }

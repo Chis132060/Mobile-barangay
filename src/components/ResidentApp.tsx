@@ -26,19 +26,19 @@
     return n;
   }
   var _react = require("react");
-  var _reactNativeWebDistExportsAlert = require("react-native-web/dist/exports/Alert");
+  var _reactNativeWebDistExportsAlert = require("react-native").Alert;
   var Alert = _interopDefault(_reactNativeWebDistExportsAlert);
-  var _reactNativeWebDistExportsImage = require("react-native-web/dist/exports/Image");
+  var _reactNativeWebDistExportsImage = require("react-native").Image;
   var Image = _interopDefault(_reactNativeWebDistExportsImage);
-  var _reactNativeWebDistExportsModal = require("react-native-web/dist/exports/Modal");
+  var _reactNativeWebDistExportsModal = require("react-native").Modal;
   var Modal = _interopDefault(_reactNativeWebDistExportsModal);
-  var _reactNativeWebDistExportsPressable = require("react-native-web/dist/exports/Pressable");
+  var _reactNativeWebDistExportsPressable = require("react-native").Pressable;
   var Pressable = _interopDefault(_reactNativeWebDistExportsPressable);
-  var _reactNativeWebDistExportsScrollView = require("react-native-web/dist/exports/ScrollView");
+  var _reactNativeWebDistExportsScrollView = require("react-native").ScrollView;
   var ScrollView = _interopDefault(_reactNativeWebDistExportsScrollView);
   var _componentsPwaText = require("@/components/pwa-text");
   var Text = { default: _componentsPwaText.PwaText };
-  var _reactNativeWebDistExportsView = require("react-native-web/dist/exports/View");
+  var _reactNativeWebDistExportsView = require("react-native").View;
   var View = _interopDefault(_reactNativeWebDistExportsView);
   var _expoRouter = require("expo-router");
   var _reactNativeSafeAreaContext = require("react-native-safe-area-context");
@@ -414,7 +414,7 @@
             }), (0, _reactJsxRuntime.jsx)(Pressable.default, {
               onPress: () => {
                 setOpen(false);
-                go('updates');
+                _expoRouter.router.push('/notifications');
               },
               style: {
                 borderTopWidth: 1,
@@ -428,7 +428,7 @@
                   fontWeight: '800',
                   color: _componentsUi.C.blue
                 },
-                children: "View all updates"
+                children: "View all notifications"
               })
             })]
           })
@@ -995,6 +995,15 @@
               })
             })]
           })]
+        }), (0, _reactJsxRuntime.jsx)(Pressable.default, {
+          accessibilityRole: "button",
+          accessibilityLabel: "Forgot your password?",
+          onPress: () => _expoRouter.router.push('/reset-password'),
+          style: { alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 4 },
+          children: (0, _reactJsxRuntime.jsx)(Text.default, {
+            style: { color: _componentsUi.C.blue, fontSize: 13, fontWeight: '600' },
+            children: "Forgot password?"
+          })
         }), (0, _reactJsxRuntime.jsx)(_componentsUi.Button, {
           title: busy ? 'Signing In...' : 'Sign In',
           onPress: () => void submit(),

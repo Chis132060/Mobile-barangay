@@ -1,4 +1,5 @@
 import { PwaText } from '@/components/pwa-text';
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, View } from 'react-native';
 import { Button, C, ErrorBox, Icon, Input, Label, Page } from '@/components/ui';
@@ -7,9 +8,9 @@ import { supabase } from '@/lib/supabase';
 type Resident = { id: string; verification_status?: string | null; household_onboarding_completed?: boolean | null; address?: string | null; purok?: string | null };
 type Notice = { id: string; title: string; message: string; read_status: boolean };
 const SETTINGS = [
-  { title: 'Notifications Settings', icon: 'notifications', color: '#3b82f6', body: 'Push notifications for Barangay announcements and document request status updates are currently enabled for this device.' },
+  { title: 'Notifications Settings', icon: 'notifications', color: '#3b82f6', body: 'In-app notifications are available. Native push notifications require device registration and backend delivery before they can be enabled.' },
   { title: 'Privacy & Security', icon: 'shield', color: '#6366f1', body: 'Your personal details are encrypted and securely stored. Only authorized Barangay officials have access to resident records.' },
-  { title: 'Help & Support', icon: 'help', color: '#f59e0b', body: 'Need help? Contact the Barangay Hall hotline at (02) 8123-4567 or chat with our 24/7 AI Assistant in the AI Chat tab.' },
+  { title: 'Help & Support', icon: 'help', color: '#f59e0b', body: 'Submit a support ticket to barangay staff or ask Ate Sora in AI Chat.' },
 ];
 
 export function ProfileScreen({ user, go, onSignedOut }: { user: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null; go: (route: string) => void; onSignedOut: () => void }) {
@@ -121,7 +122,7 @@ export function ProfileScreen({ user, go, onSignedOut }: { user: { id: string; e
 
     {!resident?.household_onboarding_completed && !!user && <Pressable accessibilityRole="button" onPress={() => setOnboarding(true)} style={onboardingCard}><Icon name="home" color={C.blue} size={19} /><View style={{ flex: 1 }}><PwaText style={{ fontSize: 13, fontWeight: '700', color: '#374151' }}>Complete resident profile</PwaText><PwaText style={{ fontSize: 11, color: '#6b7280', marginTop: 3 }}>Add household details and program eligibility</PwaText></View><Icon name="chevron_right" color="#d1d5db" size={20} /></Pressable>}
 
-    <View style={menuCard}>{SETTINGS.map((item, index) => <Pressable key={item.title} accessibilityRole="button" onPress={() => setSetting(item)} style={[menuRow, index < SETTINGS.length - 1 && { borderBottomWidth: 1, borderBottomColor: '#f9fafb' }]}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><Icon name={item.icon} size={20} color={item.color} /><PwaText style={{ fontSize: 14, color: '#374151', fontWeight: '500' }}>{item.title}</PwaText></View><Icon name="chevron_right" size={17} color="#d1d5db" /></Pressable>)}</View>
+    <View style={menuCard}>{SETTINGS.map((item, index) => <Pressable key={item.title} accessibilityRole="button" onPress={() => item.title === 'Help & Support' ? router.push('/support') : setSetting(item)} style={[menuRow, index < SETTINGS.length - 1 && { borderBottomWidth: 1, borderBottomColor: '#f9fafb' }]}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><Icon name={item.icon} size={20} color={item.color} /><PwaText style={{ fontSize: 14, color: '#374151', fontWeight: '500' }}>{item.title}</PwaText></View><Icon name="chevron_right" size={17} color="#d1d5db" /></Pressable>)}</View>
 
     <View style={menuCard}><PwaText style={sectionLabel}>LATEST NOTIFICATIONS</PwaText>{notices.length ? notices.map((notice) => <Pressable key={notice.id} onPress={() => !notice.read_status && void markRead(notice.id)} style={noticeRow}><PwaText style={{ color: '#111827', fontSize: 13, fontWeight: notice.read_status ? '500' : '700' }}>{notice.title}</PwaText><PwaText style={{ color: '#6b7280', fontSize: 12, marginTop: 3 }}>{notice.message}</PwaText></Pressable>) : <PwaText style={{ color: '#6b7280', fontSize: 12 }}>No new notifications</PwaText>}</View>
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { askLocalCompanion, LOCAL_COMPANION_URL } from '../src/lib/local-companion.mjs';
+import { askLocalCompanion, LOCAL_COMPANION_URL } from '../src/lib/local-companion.ts';
 
 test('companion targets fixed loopback only', () => {
   assert.equal(LOCAL_COMPANION_URL, 'http://127.0.0.1:4891/v1/chat/completions');

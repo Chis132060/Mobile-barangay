@@ -41,7 +41,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [language, setLanguage] = useState<Language>('tgl');
   const [languageOpen, setLanguageOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [historyReady, setHistoryReady] = useState(false);
+  const [historyOwner, setHistoryOwner] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
@@ -89,16 +89,16 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     void loadOfflineHistory(user?.id).then(saved => {
       if (!active) return;
       setMessages(current => current.length ? current : saved);
-      setHistoryReady(true);
+      setHistoryOwner(user?.id || 'guest');
     });
     return () => { active = false; };
   }, [user?.id]);
 
   useEffect(() => {
-    if (!historyReady) return;
+    if (historyOwner !== (user?.id || 'guest')) return;
     const offline = messages.filter((item): item is ChatMessage & { offline: true } => item.offline === true);
     void saveOfflineHistory(user?.id, offline);
-  }, [messages, historyReady, user?.id]);
+  }, [messages, historyOwner, user?.id]);
 
   async function send(raw = input) {
     const question = raw.trim();

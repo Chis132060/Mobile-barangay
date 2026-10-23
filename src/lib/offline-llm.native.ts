@@ -33,7 +33,7 @@ export async function askLocalSora(question: string, language: 'tgl' | 'ceb' | '
       { role: 'user', content: question },
     ]);
     // Qwen can emit hidden thinking markers; display only the final answer.
-    return stripThinking(result.text || '').trim() || null;
+    return stripThinking(result.text || '').text.trim() || null;
   } catch { return null; }
 }
 

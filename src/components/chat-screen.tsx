@@ -115,7 +115,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     const formType = requestedChatDocument(question);
     setInput('');
     setNotice('');
-    const userMessageId = `u-${Date.now()}`;
+    const userMessageId = `u-${sessionToken}-${messages.length}`;
     const offlineAtSend = forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false);
     setMessages((items) => [...items, { id: userMessageId, role: 'user', content: question, offline: offlineAtSend }]);
     setBusy(true);

@@ -69,6 +69,18 @@ export function RequestsScreen({ go }: { go: (route: string) => void }) {
       if (request.payment_status === 'Paid' || request.payment_status === 'Pending') throw new Error(`Payment is already ${request.payment_status}.`);
       const amount = Number(request.fee_amount || 0);
       if (amount <= 0) throw new Error('This request is free.');
+      // A previous insert may have succeeded even if the subsequent request update failed.
+      // Reconcile that situation instead of creating a second payment reference.
+      const { data: existingPayment, error: existingError } = await supabase.from('payments')
+        .select('id,reference_number,status').eq('request_id', payRequest.id)
+        .eq('resident_id', resident.id).in('status', ['Pending', 'Paid'])
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (existingError) throw new Error('Could not verify existing payment records. Please retry later.');
+      if (existingPayment) {
+        throw new Error(existingPayment.status === 'Paid'
+          ? 'This request already has a verified payment.'
+          : 'A payment reference is already pending staff verification. Do not submit a duplicate; contact barangay staff if the request status is out of sync.');
+      }
       // payments.resident_id references residents.id (not auth.users.id).
       const { error: paymentError } = await supabase.from('payments').insert({ request_id: payRequest.id, resident_id: resident.id, amount, provider: 'QR_PAY', reference_number: referenceNumber, status: 'Pending' });
       if (paymentError?.code === '23505') throw new Error('This reference number has already been submitted or you already have a pending payment.');

@@ -73,12 +73,10 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   }, []);
 
   function toggleOfflineMode() {
-    setForceOffline(current => {
-      const next = !current;
-      void AsyncStorage.setItem(OFFLINE_MODE_KEY, String(next)).catch(() => undefined);
-      setNotice(next ? 'Offline FAQ enabled. Messages stay on your device during this session; no AI API or Supabase calls are made for offline replies.' : 'Online AI enabled. Internet is required for live replies.');
-      return next;
-    });
+    const next = !forceOffline;
+    setForceOffline(next);
+    void AsyncStorage.setItem(OFFLINE_MODE_KEY, String(next)).catch(() => undefined);
+    setNotice(next ? 'Offline FAQ enabled. Messages stay on your device during this session; no AI API or Supabase calls are made for offline replies.' : 'Online AI enabled. Internet is required for live replies.');
   }
 
   async function send(raw = input) {

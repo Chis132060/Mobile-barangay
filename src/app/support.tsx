@@ -66,6 +66,17 @@ export default function SupportRoute() {
     <Pressable onPress={() => router.back()} accessibilityRole="button"><PwaText style={{ color: C.blue, fontWeight: '700' }}>‹ Back</PwaText></Pressable>
     <Title sub="Send a concern to barangay staff and track their response.">Help & Support</Title>
     <Card>
+      <PwaText style={{ fontSize: 16, fontWeight: '700', color: C.text }}>Frequently asked questions</PwaText>
+      <PwaText style={{ fontWeight: '700', color: C.text }}>How do I verify my account?</PwaText>
+      <PwaText style={{ color: C.muted, fontSize: 13 }}>Barangay staff review your registration and ID. View the Pending Approval screen for your current status.</PwaText>
+      <PwaText style={{ fontWeight: '700', color: C.text }}>How do I track a request?</PwaText>
+      <PwaText style={{ color: C.muted, fontSize: 13 }}>Open Requests to see its status, payment, and pickup instructions.</PwaText>
+      <PwaText style={{ fontWeight: '700', color: C.text }}>What if registration is rejected?</PwaText>
+      <PwaText style={{ color: C.muted, fontSize: 13 }}>Review the rejection reason, then ask staff for guidance with a support ticket.</PwaText>
+      <PwaText style={{ fontWeight: '700', color: C.text }}>How is my data protected?</PwaText>
+      <PwaText style={{ color: C.muted, fontSize: 13 }}>Never share passwords or verification codes. Use the Privacy category for personal data requests.</PwaText>
+    </Card>
+    <Card>
       <PwaText style={{ fontSize: 16, fontWeight: '700', color: C.text }}>New support ticket</PwaText>
       <PwaText style={{ color: C.muted, fontSize: 12 }}>Never include passwords or verification codes.</PwaText>
       <PwaText style={{ color: C.text, fontWeight: '600' }}>Category</PwaText>

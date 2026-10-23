@@ -35,7 +35,7 @@ export default function SupportRoute() {
   }, []);
 
   useEffect(() => {
-    void reload();
+    queueMicrotask(() => void reload());
     if (!supabase) return;
     const channel = supabase.channel('mobile-resident-support')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => void reload()).subscribe();

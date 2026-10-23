@@ -9,6 +9,7 @@ import { apiBaseUrl, pwaApiUrl, supabase } from '@/lib/supabase';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioRecorder } from 'expo-audio';
 import { File } from 'expo-file-system';
 import { offlineSoraReply } from '@/lib/offline-sora.mjs';
+import { useNetworkState } from 'expo-network';
 
 type Language = 'tgl' | 'ceb' | 'en';
 type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; offline?: boolean; error?: boolean; citations?: string[]; formType?: string; formSchema?: Record<string, unknown> };
@@ -45,6 +46,8 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [notice, setNotice] = useState('');
   const [forceOffline, setForceOffline] = useState(false);
+  const network = useNetworkState();
+  const disconnected = network.isConnected === false || network.isInternetReachable === false;
   const [sessionToken] = useState(() => `expo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const [apiSessionId] = useState(createSessionId);
   const scroll = useRef<ScrollView>(null);
@@ -89,7 +92,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     setBusy(true);
     let persistedSessionId: string | null = null;
     // Browser offline signal is immediate; native network failures use the same local fallback.
-    const definitelyOffline = forceOffline || (typeof navigator !== 'undefined' && navigator.onLine === false);
+    const definitelyOffline = forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false);
     if (definitelyOffline) {
       const reply = offlineSoraReply(question, language);
       if (reply) setMessages((items) => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
@@ -144,7 +147,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   }
 
   function startVoice() {
-    if (forceOffline || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+    if (forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
       setNotice('Offline voice transcription is not available. Type your question to receive a local FAQ response.');
       return;
     }
@@ -324,6 +327,9 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
       </View>
     </View>
 
+    {(forceOffline || disconnected) && <View style={{ paddingHorizontal: 14, paddingVertical: 7, backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }}>
+      <PwaText style={{ fontSize: 11, color: '#92400e' }}>Offline FAQ mode · Basic guidance only · No live AI, voice transcription or barangay records</PwaText>
+    </View>}
     {!user && <View style={{ paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#f9fafb', borderBottomWidth: 1, borderBottomColor: '#f3f4f6', flexDirection: 'row', alignItems: 'center', gap: 7 }}><Icon name="public" size={14} color="#9ca3af" /><PwaText style={{ flex: 1, fontSize: 10, color: '#9ca3af' }}>Browsing as guest. Sign in to track requests and submit applications.</PwaText></View>}
     {!!notice && <PwaText style={{ color: '#9a3412', backgroundColor: '#fff7ed', paddingHorizontal: 14, paddingVertical: 8, fontSize: 11 }}>{voiceListening ? 'Listening... Tap the microphone to finish.' : notice}</PwaText>}
 

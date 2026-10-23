@@ -50,7 +50,8 @@
       [
         "expo-ai-kit",
         {
-          "llm": true
+          "llm": true,
+          "speech": true
         }
       ]
     ],

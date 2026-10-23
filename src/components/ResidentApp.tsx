@@ -995,6 +995,15 @@
               })
             })]
           })]
+        }), (0, _reactJsxRuntime.jsx)(Pressable.default, {
+          accessibilityRole: "button",
+          accessibilityLabel: "Forgot your password?",
+          onPress: () => _expoRouter.router.push('/reset-password'),
+          style: { alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 4 },
+          children: (0, _reactJsxRuntime.jsx)(Text.default, {
+            style: { color: _componentsUi.C.blue, fontSize: 13, fontWeight: '600' },
+            children: "Forgot password?"
+          })
         }), (0, _reactJsxRuntime.jsx)(_componentsUi.Button, {
           title: busy ? 'Signing In...' : 'Sign In',
           onPress: () => void submit(),

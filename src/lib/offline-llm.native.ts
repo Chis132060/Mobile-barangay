@@ -12,3 +12,8 @@ export async function askLocalSora(question: string, language: 'tgl' | 'ceb' | '
     return result.text?.trim() || null;
   } catch { return null; }
 }
+
+export async function prepareLocalSora(): Promise<'ready' | 'unsupported'> {
+  if (!(await isAvailable())) return 'unsupported';
+  try { await prepareBuiltInModel(); return 'ready'; } catch { return 'unsupported'; }
+}

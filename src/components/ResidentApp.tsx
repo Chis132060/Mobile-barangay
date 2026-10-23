@@ -26,19 +26,19 @@
     return n;
   }
   var _react = require("react");
-  var _reactNativeWebDistExportsAlert = require("react-native-web/dist/exports/Alert");
+  var _reactNativeWebDistExportsAlert = require("react-native").Alert;
   var Alert = _interopDefault(_reactNativeWebDistExportsAlert);
-  var _reactNativeWebDistExportsImage = require("react-native-web/dist/exports/Image");
+  var _reactNativeWebDistExportsImage = require("react-native").Image;
   var Image = _interopDefault(_reactNativeWebDistExportsImage);
-  var _reactNativeWebDistExportsModal = require("react-native-web/dist/exports/Modal");
+  var _reactNativeWebDistExportsModal = require("react-native").Modal;
   var Modal = _interopDefault(_reactNativeWebDistExportsModal);
-  var _reactNativeWebDistExportsPressable = require("react-native-web/dist/exports/Pressable");
+  var _reactNativeWebDistExportsPressable = require("react-native").Pressable;
   var Pressable = _interopDefault(_reactNativeWebDistExportsPressable);
-  var _reactNativeWebDistExportsScrollView = require("react-native-web/dist/exports/ScrollView");
+  var _reactNativeWebDistExportsScrollView = require("react-native").ScrollView;
   var ScrollView = _interopDefault(_reactNativeWebDistExportsScrollView);
   var _componentsPwaText = require("@/components/pwa-text");
   var Text = { default: _componentsPwaText.PwaText };
-  var _reactNativeWebDistExportsView = require("react-native-web/dist/exports/View");
+  var _reactNativeWebDistExportsView = require("react-native").View;
   var View = _interopDefault(_reactNativeWebDistExportsView);
   var _expoRouter = require("expo-router");
   var _reactNativeSafeAreaContext = require("react-native-safe-area-context");

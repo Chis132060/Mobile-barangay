@@ -8,9 +8,10 @@ import { requestedChatDocument } from '@/lib/chat-document-forms';
 import { apiBaseUrl, pwaApiUrl, supabase } from '@/lib/supabase';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioRecorder } from 'expo-audio';
 import { File } from 'expo-file-system';
+import { offlineSoraReply } from '@/lib/offline-sora.mjs';
 
 type Language = 'tgl' | 'ceb' | 'en';
-type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; error?: boolean; citations?: string[]; formType?: string; formSchema?: Record<string, unknown> };
+type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string; offline?: boolean; error?: boolean; citations?: string[]; formType?: string; formSchema?: Record<string, unknown> };
 const LANGUAGES: { id: Language; label: string; code: string }[] = [
   { id: 'tgl', label: 'Filipino', code: 'TGL' },
   { id: 'ceb', label: 'Cebuano', code: 'CEB' },
@@ -72,6 +73,15 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     setMessages((items) => [...items, { id: `u-${Date.now()}`, role: 'user', content: question }]);
     setBusy(true);
     let persistedSessionId: string | null = null;
+    // Browser offline signal is immediate; native network failures use the same local fallback.
+    const definitelyOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    if (definitelyOffline) {
+      const reply = offlineSoraReply(question, language);
+      if (reply) setMessages((items) => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
+      setNotice('Offline mode: local FAQs only. Live AI and barangay data are unavailable.');
+      setBusy(false);
+      return;
+    }
     try {
       if (user && supabase) {
         const { data, error } = await supabase.from('chat_sessions').upsert({ user_id: user.id, session_token: sessionToken, last_active_at: new Date().toISOString() }, { onConflict: 'session_token' }).select('id').single();
@@ -103,10 +113,15 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
         await supabase.from('chat_sessions').update({ last_active_at: new Date().toISOString() }).eq('session_token', sessionToken).eq('user_id', user.id);
       }
     } catch (cause) {
-      const message = cause instanceof TypeError && /fetch/i.test(cause.message)
-        ? `Cannot reach Ate Sora at ${(apiBaseUrl || pwaApiUrl || 'configured service URL')}. Start the existing API server on port 8000 (or PWA server on port 5173) and make sure .env.local uses this computer's LAN address.`
-        : cause instanceof Error ? cause.message : 'The assistant is unavailable right now.';
-      setMessages((items) => [...items, { id: `e-${Date.now()}`, role: 'assistant', content: message, error: true }]);
+      const networkFailure = cause instanceof TypeError || (cause instanceof Error && /network|fetch|offline|timed out|timeout|failed to fetch/i.test(cause.message));
+      if (networkFailure || !apiBaseUrl && !pwaApiUrl) {
+        const reply = offlineSoraReply(question, language);
+        if (reply) setMessages((items) => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
+        setNotice('Offline fallback: local FAQs only. Live AI, document submission, and status checks need internet.');
+      } else {
+        const message = cause instanceof Error ? cause.message : 'The assistant is unavailable right now.';
+        setMessages((items) => [...items, { id: `e-${Date.now()}`, role: 'assistant', content: message, error: true }]);
+      }
     } finally {
       setBusy(false);
       requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: true }));
@@ -306,6 +321,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
           <View style={{ paddingHorizontal: 14, paddingVertical: 11, backgroundColor: message.role === 'user' ? C.blue : message.error ? '#f9fafb' : '#f9fafb', borderRadius: 16, borderBottomLeftRadius: message.role === 'assistant' ? 3 : 16, borderBottomRightRadius: message.role === 'user' ? 3 : 16, borderWidth: message.role === 'assistant' ? 1 : 0, borderColor: message.error ? '#fecaca' : '#f3f4f6' }}>
             <PwaText style={{ fontSize: 12, lineHeight: 19, color: message.role === 'user' ? C.white : message.error ? C.red : '#1f2937' }}>{message.content}</PwaText>
           </View>
+          {message.offline && <PwaText style={{ fontSize: 10, color: '#a16207', paddingHorizontal: 4 }}>Offline FAQ · No internet or live records</PwaText>}
           {!!message.citations?.length && <PwaText style={{ fontSize: 10, color: C.muted, paddingHorizontal: 4 }}>Sources: {message.citations.slice(0, 3).join(', ')}</PwaText>}
           {!!message.formType && <ChatRequestForm type={message.formType as 'clearance' | 'indigency' | 'residency' | 'business'} sessionToken={sessionToken} formSchema={message.formSchema} />}
         </View>)}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { PwaText } from '@/components/pwa-text';
 import { Button, C, Card, ErrorBox, Input, Page, Title } from '@/components/ui';

@@ -73,7 +73,7 @@ export function RequestsScreen({ go }: { go: (route: string) => void }) {
       const { error: paymentError } = await supabase.from('payments').insert({ request_id: payRequest.id, resident_id: resident.id, amount, provider: 'QR_PAY', reference_number: referenceNumber, status: 'Pending' });
       if (paymentError?.code === '23505') throw new Error('This reference number has already been submitted or you already have a pending payment.');
       if (paymentError) throw new Error(`Failed to submit payment: ${paymentError.message}`);
-      const { error: updateError } = await supabase.from('document_requests').update({ payment_status: 'Pending' }).eq('id', payRequest.id).eq('resident_id', resident.id).not('payment_status', 'in', '(Paid,Pending)');
+      const { error: updateError } = await supabase.from('document_requests').update({ payment_status: 'Pending' }).eq('id', payRequest.id).eq('resident_id', resident.id);
       if (updateError) throw new Error('Payment reference was recorded, but the request status could not be updated. Do not submit a second reference; contact barangay staff for reconciliation.');
       setPayRequest(null); setScannedQR(''); setReference(''); Alert.alert('Payment reference submitted', 'Barangay staff will verify your payment.'); await load();
     } catch (cause) { setPaymentError(cause instanceof Error ? cause.message : 'Unable to submit payment.'); }

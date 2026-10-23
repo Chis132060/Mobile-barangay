@@ -74,7 +74,7 @@ export function RequestsScreen({ go }: { go: (route: string) => void }) {
       const { data: existingPayment, error: existingError } = await supabase.from('payments')
         .select('id,reference_number,status').eq('request_id', payRequest.id)
         .eq('resident_id', resident.id).in('status', ['Pending', 'Paid'])
-        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        .limit(1).maybeSingle();
       if (existingError) throw new Error('Could not verify existing payment records. Please retry later.');
       if (existingPayment) {
         throw new Error(existingPayment.status === 'Paid'

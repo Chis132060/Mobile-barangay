@@ -11,6 +11,7 @@ import { File } from 'expo-file-system';
 import { offlineSoraReply } from '@/lib/offline-sora.mjs';
 import { useNetworkState } from 'expo-network';
 import { askLocalSora, prepareLocalSora } from '@/lib/offline-llm';
+import { transcribeOfflineAudio } from '@/lib/offline-speech';
 import { clearOfflineHistory, loadOfflineHistory, saveOfflineHistory } from '@/lib/offline-history';
 
 type Language = 'tgl' | 'ceb' | 'en';
@@ -204,8 +205,8 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   }
 
   function startVoice() {
-    if (forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
-      setNotice('Offline voice transcription is not available. Type your question to receive a local FAQ response.');
+    if (Platform.OS === 'web' && (forceOffline || disconnected || (typeof navigator !== 'undefined' && navigator.onLine === false))) {
+      setNotice('Offline voice transcription requires a supported native Android or iOS build. Please type on the web.');
       return;
     }
     if (Platform.OS !== 'web') {
@@ -268,6 +269,18 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
     const file = new File(uri);
     if (!file.exists || file.size <= 0 || file.size > 4 * 1024 * 1024) {
       setNotice('Recording must be under 4 MB. Please try a shorter question.');
+      return;
+    }
+    if (forceOffline || disconnected) {
+      setVoiceProcessing(true);
+      try {
+        const transcript = await transcribeOfflineAudio(uri, language);
+        if (transcript) {
+          await send(transcript);
+        } else {
+          setNotice('Offline speech model or selected language is not available on this phone. Type your question; offline text AI and FAQs can still work.');
+        }
+      } finally { setVoiceProcessing(false); }
       return;
     }
     if (!apiBaseUrl) {

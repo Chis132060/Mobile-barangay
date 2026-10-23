@@ -414,7 +414,7 @@
             }), (0, _reactJsxRuntime.jsx)(Pressable.default, {
               onPress: () => {
                 setOpen(false);
-                go('updates');
+                _expoRouter.router.push('/notifications');
               },
               style: {
                 borderTopWidth: 1,
@@ -428,7 +428,7 @@
                   fontWeight: '800',
                   color: _componentsUi.C.blue
                 },
-                children: "View all updates"
+                children: "View all notifications"
               })
             })]
           })

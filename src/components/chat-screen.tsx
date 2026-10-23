@@ -146,6 +146,10 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
   }
 
   function startVoice() {
+    if (forceOffline || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+      setNotice('Offline voice transcription is not available. Type your question to receive a local FAQ response.');
+      return;
+    }
     if (Platform.OS !== 'web') {
       void toggleNativeRecording();
       return;

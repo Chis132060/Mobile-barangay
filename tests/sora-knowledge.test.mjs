@@ -32,3 +32,19 @@ test('resists unrelated partial words, arbitrary data, oversized queries', () =>
   assert.equal(lookupKnowledge('a'.repeat(1801), 'en', pack), null);
   assert.equal(lookupKnowledge('', 'tgl', pack), null);
 });
+
+test('every curated topic can be retrieved in all supported languages without internet', () => {
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = () => { throw Error('Unexpected network usage'); };
+  try {
+    for (const entry of pack.entries) {
+      for (const language of ['tgl', 'ceb', 'en']) {
+        const question = entry.keywords[0];
+        const reply = lookupKnowledge(question, language, pack);
+        assert.equal(reply?.knowledgeId, entry.id, `Missing ${entry.id} in ${language}`);
+        assert.equal(reply?.answer, entry.answers[language]);
+        assert.equal(reply?.offline, true);
+      }
+    }
+  } finally { globalThis.fetch = oldFetch; }
+});

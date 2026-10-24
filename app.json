@@ -53,7 +53,8 @@
           "llm": true,
           "speech": true
         }
-      ]
+      ],
+      "./plugins/with-android-min-sdk-26"
     ],
     "experiments": {
       "typedRoutes": true,

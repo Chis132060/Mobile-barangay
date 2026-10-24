@@ -9,6 +9,7 @@ import { apiBaseUrl, pwaApiUrl, supabase } from '@/lib/supabase';
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioPlayer, useAudioRecorder } from 'expo-audio';
 import { File } from 'expo-file-system';
 import { offlineSoraReply } from '@/lib/offline-sora.mjs';
+import { knowledgeReply } from '@/lib/sora-knowledge';
 import { useNetworkState } from 'expo-network';
 import { askLocalSora, prepareLocalSora, downloadSmallOfflineModel } from '@/lib/offline-llm';
 import { transcribeOfflineAudio } from '@/lib/offline-speech';
@@ -189,7 +190,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
           setMessages(items => [...items, { id: `local-${Date.now()}`, role: 'assistant', content: generated, offline: true }]);
           setNotice(companionAnswer ? 'Local GGUF companion response · sent only to device loopback. No live barangay records.' : 'On-device AI response · No internet used for generation. Live barangay records are unavailable.');
         } else {
-          const reply = offlineSoraReply(question, language);
+          const reply = (knowledgeReply(question, language) || offlineSoraReply(question, language));
           if (reply) setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
           setNotice('Offline FAQ fallback · Device AI model unavailable or not yet downloaded.');
         }
@@ -236,7 +237,7 @@ export function ChatScreen({ user }: { user: { id: string } | null }) {
           setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: generated, offline: true }]);
           setNotice(companionAnswer ? 'Local GGUF companion response · No live barangay records.' : 'On-device AI response · No live barangay records.');
         } else {
-          const reply = offlineSoraReply(question, language);
+          const reply = (knowledgeReply(question, language) || offlineSoraReply(question, language));
           if (reply) setMessages(items => [...items, { id: `offline-${Date.now()}`, role: 'assistant', content: reply.answer, offline: true }]);
           setNotice('Offline FAQ fallback · Live AI, document submission, and status checks need internet.');
         }

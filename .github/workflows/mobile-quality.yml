@@ -34,3 +34,8 @@ jobs:
         run: npx expo export --platform ios --output-dir /tmp/barangay-mobile-ios
       - name: Generate Android native project (config plugin smoke test)
         run: npx expo prebuild --platform android --no-install --clean
+      - name: Assemble native Android debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace

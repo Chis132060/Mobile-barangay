@@ -24,6 +24,10 @@ jobs:
         run: npm run lint
       - name: Unit tests
         run: node --test tests/*.test.mjs
+      - name: Test JSONL knowledge training export
+        run: |
+          node scripts/export-sora-training.mjs /tmp/sora-training.jsonl
+          node --input-type=module -e "import {readFileSync} from 'node:fs'; const lines=readFileSync('/tmp/sora-training.jsonl','utf8').trim().split('\\n'); if(lines.length < 20) throw Error('Insufficient curated examples'); for(const line of lines){const example=JSON.parse(line); if(example.messages.length!==3 || !example.messages[2].content) throw Error('Invalid training example')} console.log('Validated',lines.length,'training samples')"
       - name: Export Android bundle
         run: npx expo export --platform android --output-dir /tmp/barangay-mobile-android
       - name: Export iOS bundle

@@ -1,9 +1,10 @@
+import { FOUR_GB_PRESET, prepareSmallDeviceQuestion, boundSmallDeviceReply } from './low-memory-preset.mjs';
 import {
   downloadModel, getDownloadableModels, isAvailable,
   prepareBuiltInModel, sendMessage, setModel, stripThinking,
 } from 'expo-ai-kit';
 
-const SMALL_MODEL = 'qwen3-0.6b';
+const SMALL_MODEL = FOUR_GB_PRESET.model;
 // Curated Apache-2.0 model. Roughly 0.5 GB, explicitly downloaded while online.
 let activatedDownload = false;
 
@@ -27,13 +28,15 @@ export async function askLocalSora(question: string, language: 'tgl' | 'ceb' | '
       // Offline generation succeeds if the OS model has previously been prepared.
       await prepareBuiltInModel();
     }
+    const compactQuestion = prepareSmallDeviceQuestion(question);
+    if (!compactQuestion) return null;
     const instruction = language === 'ceb' ? 'Answer in Cebuano.' : language === 'en' ? 'Answer in English.' : 'Sumagot sa Filipino.';
     const result = await sendMessage([
-      { role: 'system', content: `You are Ate Sora, a helpful offline barangay assistant. ${instruction} Never invent live resident records, office hours, fees, ordinances, emergency contacts or current request status. State clearly that you cannot access live information offline. Answer safely and concisely.` },
-      { role: 'user', content: question },
+      { role: 'system', content: `You are Ate Sora, a helpful offline barangay assistant. ${instruction} Never invent live resident records, office hours, fees, ordinances, emergency contacts or current request status. State clearly that you cannot access live information offline. Keep the final reply under ${FOUR_GB_PRESET.targetAnswerWords} words; avoid long reasoning. Answer safely and concisely.` },
+      { role: 'user', content: compactQuestion },
     ]);
     // Qwen can emit hidden thinking markers; display only the final answer.
-    return stripThinking(result.text || '').text.trim() || null;
+    return boundSmallDeviceReply(stripThinking(result.text || '').text) || null;
   } catch { return null; }
 }
 

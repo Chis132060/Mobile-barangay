@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "updated": "2026-10-25",
+  "scope": "generic-barangay-guidance-not-official-records",
+  "entries": [
+    {
+      "id": "document-clearance",
+      "intent": "document",
+      "keywords": [
+        "barangay clearance",
+        "clearance sa barangay",
+        "barangay document"
+      ],
+      "answers": {
+        "tgl": "Para sa Barangay Clearance, mag-log in sa resident account at tingnan ang nakalistang requirements bago mag-request. Hindi ko mave-verify offline ang kasalukuyang bayad, dokumento o processing time.",
+        "ceb": "Alang sa Barangay Clearance, pag-log in sa resident account ug tan-awa ang opisyal nga mga kinahanglanon. Dili nako makumpirma offline ang bayad ug processing time.",
+        "en": "For Barangay Clearance, sign in and review the current official requirements before requesting. I cannot verify fees or processing times offline."
+      }
+    },
+    {
+      "id": "document-indigency",
+      "intent": "document",
+      "keywords": [
+        "indigency",
+        "certificate of indigency",
+        "sertipiko ng indigency"
+      ],
+      "answers": {
+        "tgl": "Ang Certificate of Indigency ay karaniwang hinihingi para sa eligibility sa ilang assistance programs. Tingnan ang opisyal na requirements at eligibility sa app kapag online; hindi ako makapag-verify ng personal eligibility offline.",
+        "ceb": "Ang Certificate of Indigency kasagarang gigamit para sa pipila ka assistance programs. Tan-awa ang opisyal nga mga kinahanglanon kung online; dili nako ma-check ang eligibility offline.",
+        "en": "A Certificate of Indigency may be used for eligibility in assistance programs. Check the official requirements online; I cannot verify personal eligibility offline."
+      }
+    },
+    {
+      "id": "document-residency",
+      "intent": "document",
+      "keywords": [
+        "residency",
+        "certificate of residency",
+        "patunay ng paninirahan"
+      ],
+      "answers": {
+        "tgl": "Para sa Certificate of Residency, piliin ang tamang document request at sundin ang opisyal na listahan ng requirements. Iba-iba ang verification bawat barangay; kailangan ng internet para mag-submit.",
+        "ceb": "Para sa Certificate of Residency, pilia ang dokumento ug sundi ang opisyal nga requirements. Kinahanglan ang internet para mosumite.",
+        "en": "For a Certificate of Residency, choose the document request and follow your barangay's verified requirements. Submission needs internet."
+      }
+    },
+    {
+      "id": "document-business",
+      "intent": "document",
+      "keywords": [
+        "business clearance",
+        "barangay business permit",
+        "business permit"
+      ],
+      "answers": {
+        "tgl": "Para sa Business Clearance, i-check ang kasalukuyang business requirements sa official barangay channel. Hindi ako magbibigay ng hindi verified na permit fee o timeline offline.",
+        "ceb": "Para sa Business Clearance, tan-awa ang bag-ong opisyal nga business requirements. Dili nako makumpirma offline ang fee ug timeline.",
+        "en": "For Business Clearance, check the latest business documentation and fees on official barangay channels; I cannot verify current fees offline."
+      }
+    },
+    {
+      "id": "payment",
+      "intent": "status",
+      "keywords": [
+        "payment status",
+        "status ng bayad",
+        "paid na ba",
+        "resibo"
+      ],
+      "answers": {
+        "tgl": "Hindi ko nakikita offline ang iyong payment status o resibo. Kumonekta sa internet at tingnan ang Requests at payment record; huwag uliting magbayad hangga't hindi nabe-verify.",
+        "ceb": "Dili nako makita offline ang imong status sa bayad o resibo. Pag-online ug i-check ang Requests; ayaw usba ang bayad hangtod makumpirma.",
+        "en": "I cannot check payment or receipt status offline. Reconnect and review Requests before making any duplicate payment."
+      }
+    },
+    {
+      "id": "request-status",
+      "intent": "status",
+      "keywords": [
+        "request status",
+        "status ng request",
+        "pending request",
+        "track request"
+      ],
+      "answers": {
+        "tgl": "Hindi ko makukuha ang live request status nang offline. Pag may internet, buksan ang Requests o Notifications para sa opisyal na update.",
+        "ceb": "Dili nako makuha ang live request status kung offline. Pag-online ug tan-awa ang Requests o Notifications.",
+        "en": "I cannot access live request status offline. Reconnect and check Requests or Notifications."
+      }
+    },
+    {
+      "id": "hours",
+      "intent": "office",
+      "keywords": [
+        "office hours",
+        "oras ng barangay",
+        "barangay hall hours",
+        "bukas ang opisina"
+      ],
+      "answers": {
+        "tgl": "Nagbabago ang oras ng barangay hall sa holidays o special announcements. Hindi ko ma-verify ang kasalukuyang opening hours offline.",
+        "ceb": "Mahimong mausab ang oras sa barangay hall labi na sa holidays. Dili nako makumpirma ang oras offline.",
+        "en": "Barangay hall hours can vary, especially on holidays. I cannot verify current opening times offline."
+      }
+    },
+    {
+      "id": "curfew",
+      "intent": "rules",
+      "keywords": [
+        "curfew",
+        "noise ordinance",
+        "ordinansa sa ingay",
+        "noise curfew"
+      ],
+      "answers": {
+        "tgl": "Ang curfew at noise ordinance ay nakadepende sa lokal na batas. Hindi ako mag-iimbento ng oras o multa; mag-check ng official ordinance kapag online.",
+        "ceb": "Ang curfew ug noise ordinance nagdepende sa lokal nga balaod. Dili ko mohatag og oras o multa nga wala pa ma-verify.",
+        "en": "Curfew and noise regulations are local rules. I will not invent times or penalties; check official ordinances when connected."
+      }
+    },
+    {
+      "id": "events",
+      "intent": "events",
+      "keywords": [
+        "barangay event",
+        "barangay events",
+        "upcoming activity",
+        "community event"
+      ],
+      "answers": {
+        "tgl": "Hindi ko makikita ang kasalukuyang barangay events offline. Buksan ang Updates pagkatapos kumonekta sa internet.",
+        "ceb": "Dili nako makita ang kasamtangang events offline. Tan-awa ang Updates kung online.",
+        "en": "I cannot retrieve upcoming barangay events offline. Reconnect and check Updates."
+      }
+    },
+    {
+      "id": "emergency",
+      "intent": "emergency",
+      "keywords": [
+        "medical emergency",
+        "sunog",
+        "fire emergency",
+        "ambulance",
+        "aksidente"
+      ],
+      "answers": {
+        "tgl": "Kung may emergency, humingi agad ng tulong sa available na local emergency services o malapit na barangay responder. Hindi makakatawag o makakapag-dispatch ng tulong ang offline chatbot.",
+        "ceb": "Kung adunay emergency, pangayo dayon og tabang sa lokal nga responders. Dili maka-dispatch og tabang ang offline chatbot.",
+        "en": "For emergencies, contact local emergency responders directly. This offline chatbot cannot dispatch help."
+      }
+    }
+  ]
+}

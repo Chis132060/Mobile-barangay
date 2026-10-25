@@ -3,6 +3,9 @@ import { Pressable, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { saveRequestDraft, readRequestDraft, clearRequestDraft } from '@/lib/local-request-drafts';
+import { saveWebRequestDraft, readWebRequestDraft, deleteWebRequestDraft } from '@/lib/web-request-drafts';
+import { Platform } from 'react-native';
 import { Button, C, Card, ErrorBox, Input, Label } from '@/components/ui';
 import type { ChatDocumentType } from '@/lib/chat-document-forms';
 
@@ -21,6 +24,9 @@ export function ChatRequestForm({ type, sessionToken, formSchema }: { type: Chat
   const [contact, setContact] = useState('');
   const [extra, setExtra] = useState({ idType: 'PhilID / National ID', incomeBracket: 'Below ₱10,000', dependentsCount: '1', assistanceType: 'Medical / Hospitalization', yearsResiding: '5 years', purokAddress: 'Purok 1', businessName: '', businessNature: 'Retail / Sari-Sari Store', registrationType: 'New', ownerContactNumber: '', dtiSecRegistrationNo: '', tin: '', establishmentType: 'Sari-sari store', capitalization: '', grossSalesPreviousYear: '', businessAddress: '' });
   const [residentId, setResidentId] = useState<string | null>(null);
+  const [draftOwner, setDraftOwner] = useState<string | null>(null);
+  const [draftNotice, setDraftNotice] = useState('');
+  const [draftPassphrase, setDraftPassphrase] = useState('');
   const [file, setFile] = useState<PickedFile | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -35,6 +41,12 @@ export function ChatRequestForm({ type, sessionToken, formSchema }: { type: Chat
     let active = true;
     const load = async () => {
       if (!supabase) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (active && session?.user?.id) {
+        setDraftOwner(session.user.id);
+        const draft = await readRequestDraft(session.user.id, type);
+        if (active && draft) { setPurpose(draft.purpose); setDraftNotice('Local draft restored. Not submitted to the barangay.'); }
+      }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase.from('residents').select('id,verification_status,contact_number').eq('user_id', user.id).maybeSingle();
@@ -45,7 +57,37 @@ export function ChatRequestForm({ type, sessionToken, formSchema }: { type: Chat
     };
     void load();
     return () => { active = false; };
-  }, []);
+  }, [type]);
+
+  async function saveDraft() {
+    if (!draftOwner) { setDraftNotice('Sign in once while online before saving an account-specific draft.'); return; }
+    if (Platform.OS === 'web') {
+      try {
+        await saveWebRequestDraft(draftOwner, type, purpose.trim(), draftPassphrase);
+        setDraftNotice('Encrypted browser draft saved. NOT submitted. Keep the passphrase: it cannot be recovered.');
+      } catch (error) { setDraftNotice(error instanceof Error ? error.message : 'Could not save browser draft.'); }
+      return;
+    }
+    const ok = await saveRequestDraft(draftOwner, type, purpose.trim());
+    setDraftNotice(ok ? 'Saved locally on this device only. NOT submitted; attachments and other fields are not saved.' : 'Secure draft storage is unavailable.');
+  }
+
+  async function restoreDraft() {
+    if (Platform.OS !== 'web' || !draftOwner) return;
+    try {
+      const draft = await readWebRequestDraft(draftOwner, type, draftPassphrase);
+      if (!draft) { setDraftNotice('No encrypted browser draft found.'); return; }
+      setPurpose(draft.purpose);
+      setDraftNotice('Encrypted draft restored. NOT submitted. Review everything and submit online manually.');
+    } catch (error) { setDraftNotice(error instanceof Error ? error.message : 'Unable to restore draft.'); }
+  }
+
+  async function discardDraft() {
+    if (!draftOwner) return;
+    if (Platform.OS === 'web') await deleteWebRequestDraft(draftOwner, type);
+    else await clearRequestDraft(draftOwner, type);
+    setDraftNotice('Local draft deleted from this device.');
+  }
 
   const update = (key: keyof typeof extra, value: string) => setExtra((old) => ({ ...old, [key]: value }));
 
@@ -134,6 +176,12 @@ export function ChatRequestForm({ type, sessionToken, formSchema }: { type: Chat
         if (businessError) throw businessError;
       }
       await supabase.from('transactions').insert({ user_id: user.id, module: 'Documents', action: 'Create Request', description: `Submitted ${details.title} via AI session ${sessionToken}.` });
+      // Server success is authoritative: never tell the resident submission failed
+      // because optional local draft cleanup could not complete.
+      try {
+        if (Platform.OS === 'web') await deleteWebRequestDraft(user.id, type);
+        else await clearRequestDraft(user.id, type);
+      } catch { /* Optional cleanup may be retried by the resident. */ }
       setSubmitted(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Failed to submit the document request.');
@@ -144,7 +192,7 @@ export function ChatRequestForm({ type, sessionToken, formSchema }: { type: Chat
 
   if (submitted) return <Card style={{ backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }}><Text style={{ fontSize: 14, fontWeight: '800', color: '#065f46' }}>Application submitted successfully</Text><Text style={{ fontSize: 12, color: '#047857' }}>{details.title} · Request {requestId.slice(0, 10)} · {paid ? `₱${details.fee.toFixed(2)}` : 'FREE'}</Text><Button title="Track in My Requests" onPress={() => router.replace('/requests')} /></Card>;
 
-  return <View style={{ marginTop: 10, padding: 14, borderRadius: 18, borderWidth: 2, borderColor: '#bfdbfe', backgroundColor: '#eff6ff', gap: 10 }}><View><Text style={{ fontSize: 13, fontWeight: '800', color: '#172554' }}>Online Document Application</Text><Text style={{ fontSize: 10, color: C.blue }}>{details.title} · {paid ? `₱${details.fee.toFixed(2)}` : 'FREE'}</Text></View>{!residentId&&<><Text style={{ fontSize: 11, color: '#92400e' }}>Sign in with a verified resident account to submit this application.</Text><Button title="Sign in" secondary onPress={()=>router.replace('/login')}/></>}{!!error&&<ErrorBox>{error}</ErrorBox>}<Label>Purpose / Layunin *</Label><Input value={purpose} onChangeText={setPurpose} placeholder="Explain why you need this document" maxLength={2000} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
+  return <View style={{ marginTop: 10, padding: 14, borderRadius: 18, borderWidth: 2, borderColor: '#bfdbfe', backgroundColor: '#eff6ff', gap: 10 }}><View><Text style={{ fontSize: 13, fontWeight: '800', color: '#172554' }}>Online Document Application</Text><Text style={{ fontSize: 10, color: C.blue }}>{details.title} · {paid ? `₱${details.fee.toFixed(2)}` : 'FREE'}</Text></View>{!residentId&&<><Text style={{ fontSize: 11, color: '#92400e' }}>Sign in with a verified resident account to submit this application.</Text><Button title="Sign in" secondary onPress={()=>router.replace('/login')}/></>}{!!error&&<ErrorBox>{error}</ErrorBox>}<Text style={{fontSize:11,color:'#92400e'}}>Offline drafts save only the purpose (not files or payments). They are NOT submitted. Reconnect and confirm submission manually.</Text>{Platform.OS === 'web' && <><Label>Draft recovery passphrase (12+ characters; never saved)</Label><Input value={draftPassphrase} onChangeText={setDraftPassphrase} placeholder="Enter your private recovery passphrase" secureTextEntry /><Button title="Unlock encrypted browser draft" secondary onPress={() => void restoreDraft()} disabled={busy || !draftOwner} /></>}<Button title="Save local draft (not submitted)" secondary onPress={() => void saveDraft()} disabled={busy || !draftOwner} /><Button title="Delete local draft" secondary onPress={() => void discardDraft()} disabled={busy || !draftOwner} />{!!draftNotice && <Text style={{fontSize:11,color:'#475569'}}>{draftNotice}</Text>}<Label>Purpose / Layunin *</Label><Input value={purpose} onChangeText={setPurpose} placeholder="Explain why you need this document" maxLength={2000} multiline style={{ minHeight: 70, textAlignVertical: 'top' }} />
     {type === 'clearance'&&<><Label>Identification type</Label><Input value={extra.idType} onChangeText={(v)=>update('idType',v)} /></>}
     {type === 'indigency'&&<><Label>Income bracket</Label><Input value={extra.incomeBracket} onChangeText={(v)=>update('incomeBracket',v)} /><Label>Dependents</Label><Input value={extra.dependentsCount} onChangeText={(v)=>update('dependentsCount',v)} keyboardType="number-pad"/><Label>Assistance type</Label><Input value={extra.assistanceType} onChangeText={(v)=>update('assistanceType',v)} /></>}
     {type === 'residency'&&<><Label>Years residing</Label><Input value={extra.yearsResiding} onChangeText={(v)=>update('yearsResiding',v)} /><Label>Purok address</Label><Input value={extra.purokAddress} onChangeText={(v)=>update('purokAddress',v)} /></>}

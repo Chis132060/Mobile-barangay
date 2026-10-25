@@ -13,6 +13,8 @@ function intercepted(url, { method = 'GET', authorization = false, mode = 'same-
   let response = null;
   const headers = authorization ? { Authorization: 'Bearer secret' } : {};
   const request = new Request(url, { method, headers });
+  // Node's Request cannot be created with navigate mode; simulate the browser event.
+  if (mode === 'navigate') Object.defineProperty(request, 'mode', { value: 'navigate' });
   const event = { request, respondWith: p => { response = p; } };
   listeners.fetch(event);
   return response !== null;
@@ -31,7 +33,7 @@ test('PWA never intercepts Supabase/API, authenticated requests, or writes', () 
   assert.equal(intercepted('https://other.example/assets/file.js'), false);
 });
 test('PWA handles same-origin navigation and public static assets', () => {
-  assert.equal(intercepted('https://barangay.example/requests'), true);
+  assert.equal(intercepted('https://barangay.example/requests', { mode: 'navigate' }), true);
   assert.equal(intercepted('https://barangay.example/_expo/static/js/web.js'), true);
   assert.equal(intercepted('https://barangay.example/assets/icon.png'), true);
   assert.equal(intercepted('https://barangay.example/assets/icon.png?token=private'), false);

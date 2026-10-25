@@ -6,7 +6,9 @@ const code = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
 const listeners = {};
 const context = {
   self: { location: { origin: 'https://barangay.example' }, addEventListener: (type, fn) => { listeners[type] = fn; } },
-  URL, Request, Response, caches: {}, fetch: async () => { throw new Error('unexpected fetch'); },
+  URL, Request, Response,
+  caches: { open: async () => ({ match: async () => null, put: async () => {}, keys: async () => [], delete: async () => {} }) },
+  fetch: async () => new Response('public asset', { status: 200 }),
 };
 vm.runInNewContext(code, context, { filename: 'sw.js' });
 function intercepted(url, { method = 'GET', authorization = false, mode = 'same-origin' } = {}) {
@@ -15,7 +17,7 @@ function intercepted(url, { method = 'GET', authorization = false, mode = 'same-
   const request = new Request(url, { method, headers });
   // Node's Request cannot be created with navigate mode; simulate the browser event.
   if (mode === 'navigate') Object.defineProperty(request, 'mode', { value: 'navigate' });
-  const event = { request, respondWith: p => { response = p; } };
+  const event = { request, respondWith: p => { response = p; void Promise.resolve(p).catch(() => undefined); } };
   listeners.fetch(event);
   return response !== null;
 }

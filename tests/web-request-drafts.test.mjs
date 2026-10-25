@@ -1,10 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { webcrypto } from 'node:crypto';
 import { saveWebRequestDraft, readWebRequestDraft, deleteWebRequestDraft } from '../src/lib/web-request-drafts.ts';
 
 test('AES-GCM PWA draft roundtrip, wrong password, user isolation, delete', async (t) => {
-  const originalCrypto = globalThis.crypto;
   const originalDb = globalThis.indexedDB;
   const data = new Map();
   const db = {
@@ -23,7 +21,6 @@ test('AES-GCM PWA draft roundtrip, wrong password, user isolation, delete', asyn
       return tx;
     },
   };
-  globalThis.crypto = webcrypto;
   globalThis.indexedDB = {
     open: () => {
       const req = { result: db };
@@ -31,7 +28,7 @@ test('AES-GCM PWA draft roundtrip, wrong password, user isolation, delete', asyn
       return req;
     },
   };
-  t.after(() => { globalThis.crypto = originalCrypto; globalThis.indexedDB = originalDb; });
+  t.after(() => { globalThis.indexedDB = originalDb; });
   const alice = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
   const bob = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
   const pass = 'long private phrase 123';

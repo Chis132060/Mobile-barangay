@@ -176,8 +176,12 @@ export function ChatRequestForm({ type, sessionToken, formSchema }: { type: Chat
         if (businessError) throw businessError;
       }
       await supabase.from('transactions').insert({ user_id: user.id, module: 'Documents', action: 'Create Request', description: `Submitted ${details.title} via AI session ${sessionToken}.` });
-      if (Platform.OS === 'web') await deleteWebRequestDraft(user.id, type);
-      else await clearRequestDraft(user.id, type);
+      // Server success is authoritative: never tell the resident submission failed
+      // because optional local draft cleanup could not complete.
+      try {
+        if (Platform.OS === 'web') await deleteWebRequestDraft(user.id, type);
+        else await clearRequestDraft(user.id, type);
+      } catch { /* Optional cleanup may be retried by the resident. */ }
       setSubmitted(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Failed to submit the document request.');

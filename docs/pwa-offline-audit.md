@@ -23,3 +23,9 @@ Reference: https://www.gomage.com/blog/pwa-offline/
 ## Android CI issue
 
 PR run #65 failed on Android manifest merger: `expo-ai-kit` requires minSdk 26 whereas default app was 24. A config plugin was added to set SDK 26. The first follow-up APK compile exceeded the old 20-minute CI timeout, producing a **cancelled** check rather than evidence of an Android app failure. Android APK compilation is now a separate job with a longer timeout. A successful CI Gradle build still does **not** prove offline inference on a 4 GB phone.
+
+## New native draft support
+
+The **Ate Sora chat request form** now includes explicit Save/Delete local draft controls on native Android/iOS. On a signed-in native device, it restores at most the document type and the purpose field using account-scoped `expo-secure-store`; the draft is labeled **not submitted**. Attachments, other form fields, payment references and resident records are not persisted by this feature. A successful online submission removes the matching native draft.
+
+The PWA web button is intentionally disabled: persisting arbitrary residents' personal form details in unencrypted browser storage would expose data on shared/public phones. Browsers have Cache API for **public app assets** but do not automatically offer secure offline persistence for application drafts. Implement a consent-driven encrypted IndexedDB design with an explicit user-managed recovery key and authenticated manual sync before shipping web resident drafts. No automatic upload/synchronization is enabled.
